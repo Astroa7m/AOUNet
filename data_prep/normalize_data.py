@@ -92,4 +92,4 @@ def normalize_dataset(file_path: str, output_path: str = None) -> None:
 
 
 if __name__ == "__main__":
-    normalize_dataset('../data/aou_training_dataset.json')
+    normalize_dataset('../data/json/aou_rag_dataset.json')

@@ -6,3 +6,5 @@ langchain-groq
 langgraph-cli[inmem]
 chromadb
 pillow
+sentence-transformers
+tqdm
