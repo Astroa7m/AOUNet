@@ -1,0 +1,8 @@
+langgraph
+langgraph-sdk
+langchain
+langchain-community
+langchain-groq
+langgraph-cli[inmem]
+chromadb
+pillow
