@@ -1,31 +1,34 @@
 import json
-import logging
+import os.path
+from pathlib import Path
 
+from data_prep.pdf_prep import pdfs_to_markdown
+from logger_config import get_logger
 import chromadb
 from chromadb.utils import embedding_functions
 from tqdm import tqdm
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 
-collection_name = "aou_data"
+
+q_a_collection_name = "q_a_aou_data"
+pdf_collection_name = "pdf_aou_data"
+pdf_parent_file = "../data/pdfs"
 client_file_name = "./chroma_db"
 input_file_path = "../data/json/aou_rag_dataset.json"
 model_name = "multi-qa-MiniLM-L6-cos-v1"
 embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=model_name)
 
+logger = get_logger(__name__)
+
 
 def qa_chunk(
-        collection_name=collection_name,
+        collection_name=q_a_collection_name,
         client_file_name=client_file_name,
         input_file_path=input_file_path
 ):
     """Chunks QA data into, one record per chunk"""
-    logger = logging.getLogger("chroma_setup")
 
-    logger.info(f"Started Q/A chunking")
+    logger.debug(f"Started Q/A chunking")
 
     client = chromadb.PersistentClient(client_file_name)
     collection = client.get_or_create_collection(
@@ -39,7 +42,7 @@ def qa_chunk(
         }
     )
 
-    logger.info(f"Loading QA data from {input_file_path}")
+    logger.debug(f"Loading QA data from {input_file_path}")
     with open(input_file_path, encoding="utf-8") as f:
         qa_data = json.load(f)
 
@@ -57,7 +60,7 @@ def qa_chunk(
     total_batches = range(0, len(documents), batch_size)
 
     for i in tqdm(total_batches, desc="Ingesting QA records", unit="batch"):
-        logger.info(f"Adding batch {i}–{i + batch_size} to collection")
+        logger.debug(f"Adding batch {i}–{i + batch_size} to collection")
         collection.add(
             documents=documents[i:i + batch_size],
             ids=ids[i:i + batch_size],
@@ -65,12 +68,46 @@ def qa_chunk(
         )
 
     count = collection.count()
-    logger.info(f"Done added total {count} documents to collection")
+    logger.debug(f"Done added total {count} documents to collection")
+
+def pdf_chunking(
+        collection_name=pdf_collection_name,
+        client_file_name=client_file_name,
+        pdf_parent_dir_path=pdf_parent_file
+):
+    path = Path(pdf_parent_dir_path)
+
+    pdfs_path = []
+
+    if not path.exists():
+        raise Exception("dir not found")
+    if not path.is_dir():
+        raise Exception("Not a dir")
+
+    def iterate_child_dir(fromdir: Path):
+        global original_doc_count
+
+        logger.debug(f"within {os.path.basename(fromdir)}")
+        children = fromdir.iterdir()
+        for dir in children:
+            if dir.is_dir():
+                iterate_child_dir(dir)
+            else:
+                # document detected
+                pdfs_path.append(dir)
+
+    iterate_child_dir(path)
+
+    pdf_markdown = []
+
+    for pdf_path in pdfs_path:
+        pdf_markdown.append(pdfs_to_markdown(pdf_path))
+
+    pass
 
 
-def query(query_text, collection_name=collection_name,
+def query(query_text, collection_name=q_a_collection_name,
           client_file_name=client_file_name, n_results=5, debug=False):
-
     client = chromadb.PersistentClient(path=client_file_name)
     collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
     results = collection.query(
@@ -82,10 +119,10 @@ def query(query_text, collection_name=collection_name,
         for doc in results['documents']:
             print(doc)
 
-
     return results['documents']
 
-if __name__ == "__main__":
-    creating = True
-    qa_chunk() if creating else query("ANy infor about ahmed samir?", debug=True)
 
+if __name__ == "__main__":
+    # creating = True
+    # qa_chunk() if creating else query("ANy debugr about ahmed samir?", debug=True)
+    pdf_chunking()

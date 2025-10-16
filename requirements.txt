@@ -8,3 +8,4 @@ chromadb
 pillow
 sentence-transformers
 tqdm
+docling
