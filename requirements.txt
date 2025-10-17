@@ -9,3 +9,4 @@ pillow
 sentence-transformers
 tqdm
 docling
+tiktoken
