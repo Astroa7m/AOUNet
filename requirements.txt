@@ -10,3 +10,4 @@ sentence-transformers
 tqdm
 docling
 tiktoken
+ddgs

@@ -1,0 +1,17 @@
+The problem of resolving imports is by creating a top-level pyproject.toml file as the following:
+```
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "AOUNet"
+version = "0.0.1"
+
+[tool.setuptools]
+packages = ["data", "data_prep", "graph", "common"]
+```
+
+-Under within packages list we add all the packages/modules/dir that are used as imports within other files
+-Give a proper name to the project
+- then run `pip install -e .`
