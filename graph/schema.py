@@ -4,9 +4,12 @@ from langgraph.graph import MessagesState
 from pydantic import BaseModel, Field
 
 
-class RetrivalState(MessagesState):
+class AgentState(MessagesState):
+    """Enhanced state that tracks retrieval results and iterations"""
     retrieval_result: List[str]
     query: str
+    iteration_count: int
+    max_iterations: int
 
 
 class RouterSchema(BaseModel):

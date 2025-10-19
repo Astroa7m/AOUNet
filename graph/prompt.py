@@ -1,7 +1,7 @@
 from string import Template
 
 RETRIEVAL_PROMPT = Template("""
-You are a helpful assistant. Answer the following query based on the following context.
+You are a helpful assistant. Answer the following query based on the following context. When you have fully answered the user's question, call the 'done_tool' to complete the task.
 
 query:
 $query
@@ -47,10 +47,6 @@ WEB SEARCH IS NEED IF:
 * The question is about recent events, updates, or dynamic data.
 * The context is too vague, too short, or too general.
 </END OF RULES>
-
-You should classify either:
-- 'fulfilled': the context is enough for the llm to answer the query
-- 'not_fulfilled': a websearch needs to be fired to answer the query
 
 Here is the query:
 $query
