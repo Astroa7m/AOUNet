@@ -2,7 +2,7 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "aounet": "graph:graph"
+    "aounet": "graph:build_assistant"
   },
   "env": "../.env",
   "image_distro": "wolfi"

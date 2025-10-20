@@ -1,13 +1,20 @@
 from string import Template
 
 RETRIEVAL_PROMPT = Template("""
-You are a helpful AOU assistant. Answer the following query based on the following context.
+You have access to the following context:
 
-query:
-$query
+<BEGIN OF QUERY>
+User Query: $query
+<END OF QUERY/>
 
-context:
+<BEGIN OF CONTEXT>
 $context
+<END OF CONTEXT/>
+
+Instructions:
+- If you have enough information, provide your answer directly (no tool calls)
+- If you need more information, use 'search_aou_site' and call it only 1 time
+- Answer clearly and concisely
 """)
 
 WEBSEARCH_PROMPT = Template("""

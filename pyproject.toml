@@ -7,4 +7,4 @@ name = "AOUNet"
 version = "0.0.1"
 
 [tool.setuptools]
-packages = ["data", "data_prep", "graph", "common"]
+packages = ["data", "data_prep", "graph", "common", 'ui']

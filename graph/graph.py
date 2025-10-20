@@ -3,30 +3,33 @@ from typing import Literal, Dict, Any
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.constants import START, END
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
+from pydantic import BaseModel, Field
 
 from common.helpers import llm
 from data_prep.config import get_pdf_collection, get_q_a_collection
 from prompt import RETRIEVAL_PROMPT, DECISION_MAKING_PROMPT, WEBSEARCH_PROMPT
-from schema import RouterSchema, AgentState
+from schema import RouterSchema, AgentState, AgentRouterSchema
 from tools import search_aou_site
-
 
 # ============================================================================
 # TOOLS DEFINITION
 # ============================================================================
 
-@tool
-def done_tool() -> str:
-    """Call this tool when you have completed the task and provided a final answer to the user"""
-    return "Task completed successfully"
+# @tool
+# def done_tool() -> str:
+#     """Call this tool when you have completed the task and provided a final answer to the user"""
+#     return "Task completed successfully"
 
 
-tools = [search_aou_site, done_tool]
-MAX_ITERATION_COUNT = 2
+tools = [search_aou_site]
 llm_with_tools = llm.bind_tools(tools)
-llm_with_router = llm.with_structured_output(RouterSchema, method='json_schema')
+llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
+
+
+# llm_with_data_router = llm.with_structured_output(RouterSchema, method='json_schema')
 
 
 # ============================================================================
@@ -65,7 +68,8 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
 
     for collection in collections:
         try:
-            r = collection.query(query_texts=query, n_results=5)
+            r = collection.query(query_texts=query,
+                                 n_results=3)  # reducing results to make testing easier mgiht increase later
             # ChromaDB returns nested lists: {'documents': [[doc1, doc2, ...]]}
             if r.get('documents') and len(r['documents']) > 0:
                 results.extend(r['documents'][0])
@@ -80,66 +84,70 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
     }
 
 
-def router(state: AgentState) -> Dict[str, Any]:
-    """
-    Analyzes the query and retrieval results to determine if we have enough context
-    or need to search for more information.
-
-    Args:
-        state: Current agent state
-
-    Returns:
-        Dict with updated messages and potentially modified query
-    """
-    query = state['query']
-    context = state['retrieval_result']
-
-    # use LLM to classify if retrieval results are sufficient
-    result = llm_with_router.invoke([
-        {
-            "role": "system",
-            "content": DECISION_MAKING_PROMPT.substitute(query=query, context=context)
-        }
-    ])
-
-    reasoning = result.reasoning
-    classification = result.classification
-
-    # create AI message with reasoning
-    ai_msg = AIMessage(content=f"reasoning: {reasoning}", metadata={"reasoning": reasoning})
-
-    if classification == "only_context":
-        # We have enough context, proceed to generate answer
-        return {
-            "messages": [ai_msg]
-        }
-    elif classification == "only_websearch":
-        # Context not relevant, instruct LLM to use search tool
-        return {
-            "messages": [ai_msg],
-            "retrieval_result": []
-        }
-    elif classification == "both":
-        # Context not enough, instruct LLM to use search tool
-        return {
-            "messages": [ai_msg],
-            "retrieval_result": context
-
-        }
-    else:
-        raise ValueError(f"Invalid classification from router: {classification}")
+# def data_router(state: AgentState) -> Dict[str, Any]:
+#     """
+#     Analyzes the query and retrieval results to determine if we have enough context
+#     or need to search for more information.
+#
+#     Args:
+#         state: Current agent state
+#
+#     Returns:
+#         Dict with updated messages and potentially modified query
+#     """
+#     query = state['query']
+#     context = state['retrieval_result']
+#
+#     # use LLM to classify if retrieval results are sufficient
+#     result = llm_with_data_router.invoke([
+#         {
+#             "role": "system",
+#             "content": DECISION_MAKING_PROMPT.substitute(query=query, context=context)
+#         }
+#     ])
+#
+#     reasoning = result.reasoning
+#     classification = result.classification
+#
+#     # create AI message with reasoning
+#     ai_msg = AIMessage(content=f"reasoning: {reasoning}", metadata={"reasoning": reasoning})
+#
+#     if classification == "only_context":
+#         # We have enough context, proceed to generate answer
+#         return {
+#             "messages": [ai_msg]
+#         }
+#     elif classification == "only_websearch":
+#         # Context not relevant, instruct LLM to use search tool
+#         return {
+#             "messages": [ai_msg],
+#             "retrieval_result": []
+#         }
+#     elif classification == "both":
+#         # Context not enough, instruct LLM to use search tool
+#         return {
+#             "messages": [ai_msg],
+#             "retrieval_result": context
+#
+#         }
+#     elif classification == "none":
+#         return {
+#             "messages": [ai_msg],
+#             "retrieval_result": []
+#
+#         }
+#     else:
+#         raise ValueError(f"Invalid classification from router: {classification}")
 
 
 def call_llm(state: AgentState) -> Dict[str, Any]:
     context = state["retrieval_result"]
     query = state['query']
 
-    # Gather ALL context including tool results
+    # gather ALL context including tool results
     all_context_parts = []
-
-    if context:
-        all_context_parts.append("=== Retrieved Documents ===")
-        all_context_parts.extend(context)
+    all_context_parts.append("=== Retrieved Documents ===")
+    all_context_parts.extend(context)
 
     # Add tool results from message history
     tool_results = [
@@ -150,21 +158,11 @@ def call_llm(state: AgentState) -> Dict[str, Any]:
         all_context_parts.append("\n=== Additional Search Results ===")
         all_context_parts.extend(tool_results)
 
-    # Build prompt
-    if all_context_parts:
-        combined_context = "\n".join(all_context_parts)
-        prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
-    else:
-        prompt = WEBSEARCH_PROMPT.substitute(query=query)
+    combined_context = "\n".join(all_context_parts)
+    prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
 
-    # Add done_tool instruction
-    instruction = (
-        "\n\nIMPORTANT: When you have fully answered the query, "
-        "call ONLY the 'done_tool' (do not call it with other tools). "
-        "You can call tools multiple times across iterations if needed."
-    )
 
-    system_message = SystemMessage(content=prompt + instruction)
+    system_message = SystemMessage(content=prompt)
     response = llm_with_tools.invoke(state['messages'] + [system_message])
 
     return {"messages": [response]}
@@ -175,7 +173,8 @@ def tool_handler(state: dict):
 
     # list tool for tool message
     result = []
-
+    tool_call_count = state.get('tool_call_count', {}).copy()
+    max_calls = state.get('max_tool_calls_per_tool', 2)
     # iterate through tool calls
 
     for tool_call in state['messages'][-1].tool_calls:
@@ -190,8 +189,21 @@ def tool_handler(state: dict):
                 ))
                 continue
 
+            # Check if tool has been called too many times
+            current_count = tool_call_count.get(tool_call["name"], 0)
+
+            if current_count >= max_calls:
+                result.append(ToolMessage(
+                    content=f"⚠️ Tool '{tool_call["name"]}' has already been called {current_count} times. Maximum calls reached. Please provide an answer with the information you have.",
+                    tool_call_id=tool_call['id']
+                ))
+                continue
+
             # run the tool
             tool_res = tool.invoke(tool_call['args'])
+
+            # Increment counter
+            tool_call_count[tool_call["name"]] = current_count + 1
 
             # ensure content is a string
             if not isinstance(tool_res, str):
@@ -208,66 +220,77 @@ def tool_handler(state: dict):
             result.extend(
                 [
                     ToolMessage(
-                        content=f"Error executing tool: {str(e)}",
+                        content=f"Error executing tool '{tool_call['name']}': {str(e)}. Please try again with different parameters.",
                         tool_call_id=tool_call['id']
-                    ),
-                    SystemMessage(
-                        content=f"Retry and call the tool once again. Tool name: {tool_call['name']}"
                     )
                 ]
-                )
+            )
 
-    return {"messages": result}
-
-
-def increment_iteration(state: AgentState) -> Dict[str, Any]:
-    """
-    Increments the iteration counter to prevent infinite loops.
-
-    Args:
-        state: Current agent state
-
-    Returns:
-        Dict with incremented iteration_count
-    """
-    return {"iteration_count": state.get("iteration_count", 0) + 1}
+    return {
+        "messages": result,
+        "tool_call_count": tool_call_count
+    }
 
 
 # ============================================================================
 # CONDITIONAL EDGE FUNCTIONS
 # ============================================================================
 
-def should_continue(state: AgentState) -> Literal["tool_handler", END]:
-    """Route to tool handler"""
-
-    # prevent infinite loops
-    current_iteration = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", MAX_ITERATION_COUNT)
-
-    if current_iteration >= max_iterations:
-        print(f"Max iterations ({max_iterations}) reached.")
-        return END
-
-    # get last message
+def should_continue(state: AgentState) -> Literal["tool_handler", "__end__"]:
     last_message = state['messages'][-1]
 
-    # if the last message is a tool call
-    if last_message.tool_calls:
-        print(f"We got a call here {last_message.tool_calls}")
-        for tool_call in last_message.tool_calls:
-            print(f"current tool {tool_call}")
-            if tool_call["name"] == "done_tool":
-                print("We are doning")
-                return END
-            else:
-                print("we are handling tool")
-                return "tool_handler"
-    return END
+    # DEBUG
+    print(f"📝 Content: '{last_message.content}'")
+    print(f"📝 Type: {type(last_message)}")
+    print(f"📝 Additional kwargs: {last_message.additional_kwargs}")
+    print(f"📝 Response metadata: {last_message.response_metadata}")
+    if hasattr(last_message, 'reasoning_content'):
+        print(f"💭 Reasoning content: {last_message.reasoning_content}")
+
+    # If no tool calls, we have the answer
+    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
+        return END
+
+    # Execute tools
+    return "tool_handler"
 
 
 # ============================================================================
 # GRAPH CONSTRUCTION
 # ============================================================================
+
+# def finalize(state: AgentState):
+#     """Generate final response using ALL gathered information."""
+#     context = state["retrieval_result"]
+#     query = state['query']
+#
+#     # gather ALL context including tool results (same as call_llm)
+#     all_context_parts = []
+#
+#     if context:
+#         all_context_parts.append("=== Retrieved Documents ===")
+#         all_context_parts.extend(context)
+#
+#     # Add tool results
+#     tool_results = [
+#         msg.content for msg in state['messages']
+#         if isinstance(msg, ToolMessage)
+#     ]
+#     if tool_results:
+#         all_context_parts.append("\n=== Additional Search Results ===")
+#         all_context_parts.extend(tool_results)
+#
+#     # Build comprehensive prompt
+#     if all_context_parts:
+#         combined_context = "\n".join(all_context_parts)
+#         prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
+#     else:
+#         prompt = WEBSEARCH_PROMPT.substitute(query=query)
+#
+#     response = llm.invoke(state['messages'] + [SystemMessage(content=prompt)])
+#
+#     return {"messages": [response]}
+
 
 def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """
@@ -280,15 +303,14 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
     # nodes
     builder.add_node("retrieval", retrieval)
-    builder.add_node("router", router)
+    # builder.add_node("data_router", data_router)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
-    builder.add_node("increment", increment_iteration)
-
+    # builder.add_node("finalize", finalize)
     # flow
     builder.add_edge(START, "retrieval")
-    builder.add_edge("retrieval", "router")
-    builder.add_edge("router", "call_llm")
+    # builder.add_edge("retrieval", "data_router")
+    builder.add_edge("retrieval", "call_llm")
 
     # Conditional edge: continue to tools or end
     builder.add_conditional_edges(
@@ -301,23 +323,59 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     )
 
     # after tool execution, increment counter and loop back to LLM
-    builder.add_edge("tool_handler", "increment")
-    builder.add_edge("increment", "call_llm")
+    builder.add_edge("tool_handler", "call_llm")
 
     return builder.compile()
 
 
-graph = build_graph()
+def agent_router(state: MessagesState) -> Command[Literal["graph", 'normal_llm']]:
+    print("Got state in router", state)
+    res = llm_with_agent_router.invoke(
+        [
+            {"role": "system", "content": f"Classify the following query:\n{state['messages'][-1].content}"},
+        ]
+    )
+
+    try:
+        if res.classification == 'info':
+            goto = 'graph'
+        else:
+            goto = 'normal_llm'
+        print(f"{res.classification}: reasoning from agent router: {res.reasoning}")
+
+        return Command(goto=goto, update=state)
+
+    except Exception as e:
+        print("Exception occurred in agent_router: Fix it later mate", e)
+
+
+def normal_llm(state: MessagesState):
+    response = llm.invoke(state['messages'])
+
+    return {"messages": [response]}
+
+
+def build_assistant():
+    overall_workflow = (
+        StateGraph(AgentState)
+        .add_node(agent_router)
+        .add_node("graph", build_graph())
+        .add_node("normal_llm", normal_llm)
+        .add_edge(START, "agent_router")
+        .add_edge("normal_llm", END)
+    )
+
+    aou_assistant = overall_workflow.compile()
+    return aou_assistant
+
 
 # ============================================================================
 # TEST
 # ============================================================================
 
 if __name__ == "__main__":
-    result = graph.invoke({
-        "messages": [HumanMessage("I am looking for information about and individual called Dawood Suliman in faculty of computer")],
-        "iteration_count": 0,
-        "max_iterations": MAX_ITERATION_COUNT
+    result = build_assistant().invoke({
+        "messages": [HumanMessage("Who is Dawood Sulima")],
     })
 
     print("\n" + "=" * 80)
@@ -325,8 +383,20 @@ if __name__ == "__main__":
     print("=" * 80 + "\n")
 
     for message in result['messages']:
-        message.pretty_print()
+        print("=" * 80 + "\n")
+        print(type(message))
 
-    print("\n" + "=" * 80)
-    print(f"Total iterations: {result.get('iteration_count', 0)}")
-    print("=" * 80)
+        # try:
+        #     if message.metadata['reasoning']:
+        #         print("reasoning:", message.metadata['reasoning'])
+        # except:
+        #     pass
+        #
+        # try:
+        #     if message.additional_kwargs['reasoning_content']:
+        #         print("reasoning:", message.additional_kwargs['reasoning_content'])
+        # except:
+        #     pass
+
+        print("content:", message)
+        print("\n" + "=" * 80)
