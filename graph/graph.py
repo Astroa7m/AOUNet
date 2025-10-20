@@ -205,10 +205,17 @@ def tool_handler(state: dict):
                 )
             )
         except Exception as e:
-            result.append(ToolMessage(
-                content=f"Error executing tool: {str(e)}",
-                tool_call_id=tool_call['id']
-            ))
+            result.extend(
+                [
+                    ToolMessage(
+                        content=f"Error executing tool: {str(e)}",
+                        tool_call_id=tool_call['id']
+                    ),
+                    SystemMessage(
+                        content=f"Retry and call the tool once again. Tool name: {tool_call['name']}"
+                    )
+                ]
+                )
 
     return {"messages": result}
 
@@ -308,7 +315,7 @@ graph = build_graph()
 
 if __name__ == "__main__":
     result = graph.invoke({
-        "messages": [HumanMessage("I am looking for information about and individual called Dawood Suliman, but I think there're plenty with the same name so idk his last name")],
+        "messages": [HumanMessage("I am looking for information about and individual called Dawood Suliman in faculty of computer")],
         "iteration_count": 0,
         "max_iterations": MAX_ITERATION_COUNT
     })
