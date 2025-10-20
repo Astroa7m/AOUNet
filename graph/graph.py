@@ -1,16 +1,17 @@
-from typing import List, Literal, Dict, Any
+from typing import Literal, Dict, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.constants import START, END
-from langgraph.graph import MessagesState, StateGraph
+from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
-from pydantic import Field
+
 from common.helpers import llm
 from data_prep.config import get_pdf_collection, get_q_a_collection
-from prompt import RETRIEVAL_PROMPT, DECISION_MAKING_PROMPT
+from prompt import RETRIEVAL_PROMPT, DECISION_MAKING_PROMPT, WEBSEARCH_PROMPT
 from schema import RouterSchema, AgentState
 from tools import search_aou_site
+
 
 # ============================================================================
 # TOOLS DEFINITION
@@ -23,8 +24,8 @@ def done_tool() -> str:
 
 
 tools = [search_aou_site, done_tool]
-
-llm_with_tools = llm.bind_tools(tools, include_reasoning=True)
+MAX_ITERATION_COUNT = 2
+llm_with_tools = llm.bind_tools(tools)
 llm_with_router = llm.with_structured_output(RouterSchema, method='json_schema')
 
 
@@ -107,106 +108,109 @@ def router(state: AgentState) -> Dict[str, Any]:
     # create AI message with reasoning
     ai_msg = AIMessage(content=f"reasoning: {reasoning}", metadata={"reasoning": reasoning})
 
-    if classification == "fulfilled":
+    if classification == "only_context":
         # We have enough context, proceed to generate answer
         return {
             "messages": [ai_msg]
         }
-    elif classification == "not_fulfilled":
-        # need more information, instruct LLM to use search tool
-        search_instruction = (
-            f"The retrieved context is insufficient. Use the 'search_aou_site' tool "
-            f"to search for information about: {query}"
-        )
+    elif classification == "only_websearch":
+        # Context not relevant, instruct LLM to use search tool
         return {
             "messages": [ai_msg],
-            "query": search_instruction
+            "retrieval_result": []
+        }
+    elif classification == "both":
+        # Context not enough, instruct LLM to use search tool
+        return {
+            "messages": [ai_msg],
+            "retrieval_result": context
+
         }
     else:
         raise ValueError(f"Invalid classification from router: {classification}")
 
 
 def call_llm(state: AgentState) -> Dict[str, Any]:
-    """
-    Calls the LLM with tools to generate a response or make tool calls.
-
-    Args:
-        state: Current agent state
-
-    Returns:
-        Dict with the LLM's response message
-    """
-    result = state["retrieval_result"]
+    context = state["retrieval_result"]
     query = state['query']
 
-    # create system message with context and instructions
-    system_message = SystemMessage(
-        content=(
-                RETRIEVAL_PROMPT.substitute(query=query, context=result)
-        )
+    # Gather ALL context including tool results
+    all_context_parts = []
+
+    if context:
+        all_context_parts.append("=== Retrieved Documents ===")
+        all_context_parts.extend(context)
+
+    # Add tool results from message history
+    tool_results = [
+        msg.content for msg in state['messages']
+        if isinstance(msg, ToolMessage)
+    ]
+    if tool_results:
+        all_context_parts.append("\n=== Additional Search Results ===")
+        all_context_parts.extend(tool_results)
+
+    # Build prompt
+    if all_context_parts:
+        combined_context = "\n".join(all_context_parts)
+        prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
+    else:
+        prompt = WEBSEARCH_PROMPT.substitute(query=query)
+
+    # Add done_tool instruction
+    instruction = (
+        "\n\nIMPORTANT: When you have fully answered the query, "
+        "call ONLY the 'done_tool' (do not call it with other tools). "
+        "You can call tools multiple times across iterations if needed."
     )
 
-    # invoke LLM with tools
+    system_message = SystemMessage(content=prompt + instruction)
     response = llm_with_tools.invoke(state['messages'] + [system_message])
 
     return {"messages": [response]}
 
 
-def tool_handler(state: AgentState) -> Dict[str, Any]:
-    """
-    Executes tool calls requested by the LLM.
+def tool_handler(state: dict):
+    "Performs tool call"
 
-    Args:
-        state: Current agent state with tool calls in last message
+    # list tool for tool message
+    result = []
 
-    Returns:
-        Dict with tool result messages
-    """
-    last_message = state['messages'][-1]
+    # iterate through tool calls
 
-    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
-        return {"messages": []}
-
-    results = []
-
-    for tool_call in last_message.tool_calls:
+    for tool_call in state['messages'][-1].tool_calls:
         try:
-            # find the requested tool (case-insensitive)
-            tool = next(
-                (t for t in tools if t.name.lower() == tool_call["name"].lower()),
-                None
-            )
+            # get the tool
+            tool = next((t for t in tools if t.name.lower() == tool_call["name"].lower()), None)
 
             if tool is None:
-                error_msg = f"Error: Tool '{tool_call['name']}' not found. Available tools: {[t.name for t in tools]}"
-                results.append(ToolMessage(
-                    content=error_msg,
+                result.append(ToolMessage(
+                    content=f"Error: Tool '{tool_call['name']}' not found",
                     tool_call_id=tool_call['id']
                 ))
                 continue
 
-            # execute the tool
-            tool_result = tool.invoke(tool_call['args'])
+            # run the tool
+            tool_res = tool.invoke(tool_call['args'])
 
-            # ensure result is a string
-            if not isinstance(tool_result, str):
-                tool_result = str(tool_result)
+            # ensure content is a string
+            if not isinstance(tool_res, str):
+                tool_res = str(tool_res)
 
-            results.append(ToolMessage(
-                content=tool_result,
-                tool_call_id=tool_call['id']
-            ))
-
+            # create a ToolMessage
+            result.append(
+                ToolMessage(
+                    content=tool_res,
+                    tool_call_id=tool_call['id']
+                )
+            )
         except Exception as e:
-            # handle any errors during tool execution
-            error_msg = f"Error executing tool '{tool_call['name']}': {str(e)}"
-            print(error_msg)
-            results.append(ToolMessage(
-                content=error_msg,
+            result.append(ToolMessage(
+                content=f"Error executing tool: {str(e)}",
                 tool_call_id=tool_call['id']
             ))
 
-    return {"messages": results}
+    return {"messages": result}
 
 
 def increment_iteration(state: AgentState) -> Dict[str, Any]:
@@ -226,43 +230,32 @@ def increment_iteration(state: AgentState) -> Dict[str, Any]:
 # CONDITIONAL EDGE FUNCTIONS
 # ============================================================================
 
-def should_continue(state: AgentState) -> Literal["tool_handler", "__end__"]:
-    """
-    Determines whether to continue with tool execution or end the graph.
+def should_continue(state: AgentState) -> Literal["tool_handler", END]:
+    """Route to tool handler"""
 
-    Args:
-        state: Current agent state
-
-    Returns:
-        "tool_handler" if tools need to be executed, "end" otherwise
-    """
-    # check iteration limit to prevent infinite loops
+    # prevent infinite loops
     current_iteration = state.get("iteration_count", 0)
-    max_iterations = state.get("max_iterations", 5)
+    max_iterations = state.get("max_iterations", MAX_ITERATION_COUNT)
 
     if current_iteration >= max_iterations:
-        print(f"Max iterations ({max_iterations}) reached. Ending conversation.")
+        print(f"Max iterations ({max_iterations}) reached.")
         return END
 
-    # check last message for tool calls
+    # get last message
     last_message = state['messages'][-1]
 
-    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
-        return END
-
-    # check if done_tool was called
-    has_done = any(
-        tc["name"].lower() == "done_tool"
-        for tc in last_message.tool_calls
-    )
-
-    if has_done:
-        print("Done tool called. Ending conversation.")
-        return END
-
-    # continue with tool execution
-    print(f"Tool calls detected: {[tc['name'] for tc in last_message.tool_calls]}")
-    return "tool_handler"
+    # if the last message is a tool call
+    if last_message.tool_calls:
+        print(f"We got a call here {last_message.tool_calls}")
+        for tool_call in last_message.tool_calls:
+            print(f"current tool {tool_call}")
+            if tool_call["name"] == "done_tool":
+                print("We are doning")
+                return END
+            else:
+                print("we are handling tool")
+                return "tool_handler"
+    return END
 
 
 # ============================================================================
@@ -280,24 +273,24 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
     # nodes
     builder.add_node("retrieval", retrieval)
-    # builder.add_node("router", router)
+    builder.add_node("router", router)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
     builder.add_node("increment", increment_iteration)
 
     # flow
     builder.add_edge(START, "retrieval")
-    builder.add_edge("retrieval", "call_llm")
-    # builder.add_edge("router", "call_llm")
+    builder.add_edge("retrieval", "router")
+    builder.add_edge("router", "call_llm")
 
     # Conditional edge: continue to tools or end
     builder.add_conditional_edges(
         "call_llm",
         should_continue,
-       {
-           "tool_handler": "tool_handler",
-           END: END
-       }
+        {
+            "tool_handler": "tool_handler",
+            END: END
+        }
     )
 
     # after tool execution, increment counter and loop back to LLM
@@ -315,7 +308,9 @@ graph = build_graph()
 
 if __name__ == "__main__":
     result = graph.invoke({
-        "messages": [HumanMessage("Do a deep research about Ahmed Samir")]
+        "messages": [HumanMessage("I am looking for information about and individual called Dawood Suliman, but I think there're plenty with the same name so idk his last name")],
+        "iteration_count": 0,
+        "max_iterations": MAX_ITERATION_COUNT
     })
 
     print("\n" + "=" * 80)

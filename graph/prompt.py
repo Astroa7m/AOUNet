@@ -1,13 +1,18 @@
 from string import Template
 
 RETRIEVAL_PROMPT = Template("""
-You are a helpful assistant. Answer the following query based on the following context. When you have fully answered the user's question, call the 'done_tool' to complete the task.
+You are a helpful AOU assistant. Answer the following query based on the following context.
 
 query:
 $query
 
 context:
 $context
+""")
+
+WEBSEARCH_PROMPT = Template("""
+You are a helpful AOU assistant. Use the 'search_aou_site' tool to search for information about:
+$query
 """)
 
 
@@ -46,11 +51,20 @@ WEB SEARCH IS NEED IF:
 * The context is missing key facts or only partially answers the question.
 * The question is about recent events, updates, or dynamic data.
 * The context is too vague, too short, or too general.
+
+
+BOTH ARE NEED IF:
+* Context is relevant but not enough
+* A complete research is need
+* Websearch can complement the provided context
+* More info required
 </END OF RULES>
 
-Here is the query:
+</BEGIN OF QUERY>
 $query
+</END OF QUERY>
 
-Here is the context:
+</BEGIN OF CONTEXT>
 $context
+</END OF CONTEXT>
 """)

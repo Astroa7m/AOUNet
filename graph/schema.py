@@ -18,6 +18,11 @@ class RouterSchema(BaseModel):
         description="Step by step reasoning behind the classification"
     )
 
-    classification: Literal["fulfilled", "not_fulfilled"] = Field(
-        description="The classification of the query fulfillment based on the context. 'fulfilled' Means the context is enough for the llm to answer the query. 'not_fulfilled' means a websearch needs to be fired to answer the query"
+    classification: Literal["only_context", "only_websearch", "both"] = Field(
+        description="""
+        The classification of the query fulfillment based on the provided context.
+        'only_context' Means the context is enough for the llm to answer the query.
+        'only_websearch' Means a websearch needs to be fired to answer the query because the context is irrelevant
+        'both' Means the context is relevant but might not be enough and therefore more information could be fetched with a websearch 
+        """
     )
