@@ -236,7 +236,7 @@ def tool_handler(state: dict):
 # CONDITIONAL EDGE FUNCTIONS
 # ============================================================================
 
-def should_continue(state: AgentState) -> Literal["tool_handler", "__end__"]:
+def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state"]:
     last_message = state['messages'][-1]
 
     # DEBUG
@@ -249,7 +249,7 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "__end__"]:
 
     # If no tool calls, we have the answer
     if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
-        return END
+        return "cleanup_state"
 
     # Execute tools
     return "tool_handler"
@@ -306,6 +306,7 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # builder.add_node("data_router", data_router)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
+    builder.add_node("cleanup_state",cleanup_state)
     # builder.add_node("finalize", finalize)
     # flow
     builder.add_edge(START, "retrieval")
@@ -318,9 +319,11 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
         should_continue,
         {
             "tool_handler": "tool_handler",
-            END: END
+            "cleanup_state": "cleanup_state"
         }
     )
+    builder.add_edge("cleanup_state",END)
+
 
     # after tool execution, increment counter and loop back to LLM
     builder.add_edge("tool_handler", "call_llm")
@@ -353,6 +356,40 @@ def normal_llm(state: MessagesState):
     response = llm.invoke(state['messages'])
 
     return {"messages": [response]}
+
+
+def cleanup_state(state: AgentState) -> Dict[str, Any]:
+    """Clean up temporary state after query completion, keep only conversation."""
+
+    # keep only user query and final AI response for conversation history
+    messages_to_keep = []
+
+    # find the last user message (current query)
+    last_human_msg = None
+    for msg in state['messages']:
+        if isinstance(msg, HumanMessage):
+            last_human_msg = msg
+            break
+
+    # find the final AI response (last AIMessage with content)
+    final_ai_msg = None
+    for msg in reversed(state['messages']):
+        if isinstance(msg, AIMessage) and msg.content and msg.content.strip():
+            # Skip reasoning messages
+            if not msg.content.startswith("reasoning:"):
+                final_ai_msg = msg
+                break
+
+    if last_human_msg:
+        messages_to_keep.append(last_human_msg)
+    if final_ai_msg:
+        messages_to_keep.append(final_ai_msg)
+
+    return {
+        "messages": messages_to_keep,
+        "retrieval_result": [],  # Clear retrieval
+        "query": "",  # Clear query
+    }
 
 
 def build_assistant():
