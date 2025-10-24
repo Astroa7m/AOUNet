@@ -1,36 +1,25 @@
 from typing import Literal, Dict, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
-from pydantic import BaseModel, Field
 
 from common.helpers import llm
 from data_prep.config import get_pdf_collection, get_q_a_collection
-from prompt import RETRIEVAL_PROMPT, DECISION_MAKING_PROMPT, WEBSEARCH_PROMPT
-from schema import RouterSchema, AgentState, AgentRouterSchema
-from tools import search_aou_site
+from graph.prompt import RETRIEVAL_PROMPT
+from graph.schema import AgentState, AgentRouterSchema
+from graph.tools import search_aou_site
 
 # ============================================================================
 # TOOLS DEFINITION
 # ============================================================================
 
-# @tool
-# def done_tool() -> str:
-#     """Call this tool when you have completed the task and provided a final answer to the user"""
-#     return "Task completed successfully"
-
 
 tools = [search_aou_site]
 llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
-
-
-# llm_with_data_router = llm.with_structured_output(RouterSchema, method='json_schema')
-
 
 # ============================================================================
 # NODE FUNCTIONS
@@ -82,62 +71,6 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
         "query": query,
         "messages": state['messages']
     }
-
-
-# def data_router(state: AgentState) -> Dict[str, Any]:
-#     """
-#     Analyzes the query and retrieval results to determine if we have enough context
-#     or need to search for more information.
-#
-#     Args:
-#         state: Current agent state
-#
-#     Returns:
-#         Dict with updated messages and potentially modified query
-#     """
-#     query = state['query']
-#     context = state['retrieval_result']
-#
-#     # use LLM to classify if retrieval results are sufficient
-#     result = llm_with_data_router.invoke([
-#         {
-#             "role": "system",
-#             "content": DECISION_MAKING_PROMPT.substitute(query=query, context=context)
-#         }
-#     ])
-#
-#     reasoning = result.reasoning
-#     classification = result.classification
-#
-#     # create AI message with reasoning
-#     ai_msg = AIMessage(content=f"reasoning: {reasoning}", metadata={"reasoning": reasoning})
-#
-#     if classification == "only_context":
-#         # We have enough context, proceed to generate answer
-#         return {
-#             "messages": [ai_msg]
-#         }
-#     elif classification == "only_websearch":
-#         # Context not relevant, instruct LLM to use search tool
-#         return {
-#             "messages": [ai_msg],
-#             "retrieval_result": []
-#         }
-#     elif classification == "both":
-#         # Context not enough, instruct LLM to use search tool
-#         return {
-#             "messages": [ai_msg],
-#             "retrieval_result": context
-#
-#         }
-#     elif classification == "none":
-#         return {
-#             "messages": [ai_msg],
-#             "retrieval_result": []
-#
-#         }
-#     else:
-#         raise ValueError(f"Invalid classification from router: {classification}")
 
 
 def call_llm(state: AgentState) -> Dict[str, Any]:
@@ -254,47 +187,13 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state
     # Execute tools
     return "tool_handler"
 
-
 # ============================================================================
-# GRAPH CONSTRUCTION
+# CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
 # ============================================================================
 
-# def finalize(state: AgentState):
-#     """Generate final response using ALL gathered information."""
-#     context = state["retrieval_result"]
-#     query = state['query']
-#
-#     # gather ALL context including tool results (same as call_llm)
-#     all_context_parts = []
-#
-#     if context:
-#         all_context_parts.append("=== Retrieved Documents ===")
-#         all_context_parts.extend(context)
-#
-#     # Add tool results
-#     tool_results = [
-#         msg.content for msg in state['messages']
-#         if isinstance(msg, ToolMessage)
-#     ]
-#     if tool_results:
-#         all_context_parts.append("\n=== Additional Search Results ===")
-#         all_context_parts.extend(tool_results)
-#
-#     # Build comprehensive prompt
-#     if all_context_parts:
-#         combined_context = "\n".join(all_context_parts)
-#         prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
-#     else:
-#         prompt = WEBSEARCH_PROMPT.substitute(query=query)
-#
-#     response = llm.invoke(state['messages'] + [SystemMessage(content=prompt)])
-#
-#     return {"messages": [response]}
-
-
-def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
+def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """
-    Constructs the LangGraph state graph with all nodes and edges.
+    Constructs the retrieval state graph that either gets data via RAG or via websearch
 
     Returns:
         Compiled StateGraph ready for execution
@@ -303,14 +202,11 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
     # nodes
     builder.add_node("retrieval", retrieval)
-    # builder.add_node("data_router", data_router)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
     builder.add_node("cleanup_state",cleanup_state)
-    # builder.add_node("finalize", finalize)
     # flow
     builder.add_edge(START, "retrieval")
-    # builder.add_edge("retrieval", "data_router")
     builder.add_edge("retrieval", "call_llm")
 
     # Conditional edge: continue to tools or end
@@ -330,8 +226,11 @@ def build_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
     return builder.compile()
 
+# ============================================================================
+# CONSTRUCTING OVERALL GRAPH
+# ============================================================================
 
-def agent_router(state: MessagesState) -> Command[Literal["graph", 'normal_llm']]:
+def agent_router(state: MessagesState) -> Command[Literal["aou_retrieval_graph", 'normal_llm']]:
     print("Got state in router", state)
     res = llm_with_agent_router.invoke(
         [
@@ -396,7 +295,7 @@ def build_assistant():
     overall_workflow = (
         StateGraph(AgentState)
         .add_node(agent_router)
-        .add_node("graph", build_graph())
+        .add_node("aou_retrieval_graph", build_aou_retrieval_graph())
         .add_node("normal_llm", normal_llm)
         .add_edge(START, "agent_router")
         .add_edge("normal_llm", END)
@@ -412,7 +311,7 @@ def build_assistant():
 
 if __name__ == "__main__":
     result = build_assistant().invoke({
-        "messages": [HumanMessage("Who is Dawood Sulima")],
+        "messages": [HumanMessage("")],
     })
 
     print("\n" + "=" * 80)
@@ -423,17 +322,17 @@ if __name__ == "__main__":
         print("=" * 80 + "\n")
         print(type(message))
 
-        # try:
-        #     if message.metadata['reasoning']:
-        #         print("reasoning:", message.metadata['reasoning'])
-        # except:
-        #     pass
-        #
-        # try:
-        #     if message.additional_kwargs['reasoning_content']:
-        #         print("reasoning:", message.additional_kwargs['reasoning_content'])
-        # except:
-        #     pass
+        try:
+            if message.metadata['reasoning']:
+                print("reasoning:", message.metadata['reasoning'])
+        except:
+            pass
+
+        try:
+            if message.additional_kwargs['reasoning_content']:
+                print("reasoning:", message.additional_kwargs['reasoning_content'])
+        except:
+            pass
 
         print("content:", message)
         print("\n" + "=" * 80)
