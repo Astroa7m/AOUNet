@@ -240,7 +240,7 @@ def agent_router(state: MessagesState) -> Command[Literal["aou_retrieval_graph",
 
     try:
         if res.classification == 'info':
-            goto = 'graph'
+            goto = 'aou_retrieval_graph'
         else:
             goto = 'normal_llm'
         print(f"{res.classification}: reasoning from agent router: {res.reasoning}")
