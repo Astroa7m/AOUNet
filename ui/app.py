@@ -1,7 +1,7 @@
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 
-from ..graph.graph import build_assistant
+from graph.graph import build_assistant
 def debugger(message):
     YELLOW = "\033[93m"
     RESET = "\033[0m"
