@@ -1,12 +1,14 @@
 from typing import Literal, Dict, Any
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
 from common.helpers import llm
+from common.pretty_print import pretty_print_messages
 from data_prep.config import get_pdf_collection, get_q_a_collection
 from graph.prompt import RETRIEVAL_PROMPT
 from graph.schema import AgentState, AgentRouterSchema
@@ -20,6 +22,7 @@ from graph.tools import search_aou_site
 tools = [search_aou_site]
 llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
+
 
 # ============================================================================
 # NODE FUNCTIONS
@@ -93,7 +96,6 @@ def call_llm(state: AgentState) -> Dict[str, Any]:
 
     combined_context = "\n".join(all_context_parts)
     prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
-
 
     system_message = SystemMessage(content=prompt)
     response = llm_with_tools.invoke(state['messages'] + [system_message])
@@ -187,6 +189,7 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state
     # Execute tools
     return "tool_handler"
 
+
 # ============================================================================
 # CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
 # ============================================================================
@@ -204,7 +207,7 @@ def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     builder.add_node("retrieval", retrieval)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
-    builder.add_node("cleanup_state",cleanup_state)
+    builder.add_node("cleanup_state", cleanup_state)
     # flow
     builder.add_edge(START, "retrieval")
     builder.add_edge("retrieval", "call_llm")
@@ -218,13 +221,13 @@ def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
             "cleanup_state": "cleanup_state"
         }
     )
-    builder.add_edge("cleanup_state",END)
-
+    builder.add_edge("cleanup_state", END)
 
     # after tool execution, increment counter and loop back to LLM
     builder.add_edge("tool_handler", "call_llm")
 
     return builder.compile()
+
 
 # ============================================================================
 # CONSTRUCTING OVERALL GRAPH
@@ -300,8 +303,8 @@ def build_assistant():
         .add_edge(START, "agent_router")
         .add_edge("normal_llm", END)
     )
-
-    aou_assistant = overall_workflow.compile()
+    memory = MemorySaver()
+    aou_assistant = overall_workflow.compile(checkpointer=memory)
     return aou_assistant
 
 
@@ -310,29 +313,18 @@ def build_assistant():
 # ============================================================================
 
 if __name__ == "__main__":
-    result = build_assistant().invoke({
-        "messages": [HumanMessage("")],
-    })
+    config = {"configurable": {"thread_id": "memory_test"}}  # persistent thread_id
+    agent = build_assistant()
 
-    print("\n" + "=" * 80)
-    print("CONVERSATION HISTORY")
-    print("=" * 80 + "\n")
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in ["exit", "quit"]:
+            break
 
-    for message in result['messages']:
-        print("=" * 80 + "\n")
-        print(type(message))
+        result = agent.invoke(
+            input={"messages": [HumanMessage(user_input)]},
+            config=config
+        )
 
-        try:
-            if message.metadata['reasoning']:
-                print("reasoning:", message.metadata['reasoning'])
-        except:
-            pass
-
-        try:
-            if message.additional_kwargs['reasoning_content']:
-                print("reasoning:", message.additional_kwargs['reasoning_content'])
-        except:
-            pass
-
-        print("content:", message)
-        print("\n" + "=" * 80)
+        pretty_print_messages(result["messages"])
+        # time.sleep(0.2)  # small delay to make console easier to read

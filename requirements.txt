@@ -11,3 +11,4 @@ tqdm
 docling
 tiktoken
 ddgs
+streamlit
