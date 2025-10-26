@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -9,6 +11,8 @@ def debugger(message):
 
 st.title("AOU Assistant")
 
+bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
+user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
 
 
 
@@ -61,7 +65,9 @@ def get_conversation_history():
 
 # display chat messages from LangGraph's memory
 for message in get_conversation_history():
-    with st.chat_message(message["role"]):
+    role = message["role"]
+    icon_path = bot_icon_path if role == "assistant" else user_icon_path
+    with st.chat_message(role, avatar=icon_path):
         st.write(message["content"])
 
 async def query_assistant(prompt):
@@ -105,11 +111,11 @@ async def query_assistant(prompt):
 
 if prompt := st.chat_input("What is up?"):
     # display user message
-    with st.chat_message("user"):
+    with st.chat_message("user", user_icon_path):
         st.write(prompt)
 
     # display assistant message with streaming
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=bot_icon_path):
         # keep this for debugging later
         with st.spinner("Thinking... please wait"):
             response = st.write_stream(query_assistant(prompt))
