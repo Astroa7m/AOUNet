@@ -9,7 +9,7 @@ from langgraph.types import Command
 
 from common.helpers import llm
 from common.pretty_print import pretty_print_messages
-from data_prep.config import get_pdf_collection, get_q_a_collection
+from data_prep.qdrant.config import query_all_collections
 from graph.prompt import RETRIEVAL_PROMPT
 from graph.schema import AgentState, AgentRouterSchema
 from graph.tools import search_aou_site
@@ -54,20 +54,12 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
             "messages": state['messages']
         }
 
-    # query both collections
-    results = []
-    collections = [get_q_a_collection(), get_pdf_collection()]
+    results=[]
 
-    for collection in collections:
-        try:
-            r = collection.query(query_texts=query,
-                                 n_results=3)  # reducing results to make testing easier mgiht increase later
-            # ChromaDB returns nested lists: {'documents': [[doc1, doc2, ...]]}
-            if r.get('documents') and len(r['documents']) > 0:
-                results.extend(r['documents'][0])
-        except Exception as e:
-            print(f"Error querying collection: {e}")
-            continue
+    try:
+        results = query_all_collections(query)
+    except Exception as e:
+        print(f"Error querying collection: {e}")
 
     return {
         "retrieval_result": results,

@@ -4,7 +4,7 @@ import uuid
 from tqdm import tqdm
 
 from config import *
-from logger_config import get_logger
+from common.logger_config import get_logger
 
 q_a_input_file_path = "data/json/aou_rag_dataset_cleaned.json"
 pdf_markdown_json_input_file_path = "data/mds_chunked/chunks.jsonl"
