@@ -12,7 +12,13 @@ from graph.graph import build_assistant
 bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
 user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
 
-theme = st_theme()['base']
+
+# have to set it initially
+try:
+    theme = st_theme()['base']
+except:
+    theme = 'light'
+
 overlay_color = "#ffffff" if theme == "light" else "#0e1117"
 header_text_color = "#002d57" if theme == "light" else "#ffffff"
 
@@ -152,8 +158,6 @@ async def query_assistant(prompt):
     human_message = {"messages": [HumanMessage(content=prompt)]}
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-    status = st.status("",expanded=True)
-
     async for event in st.session_state.assistant.astream_events(
             human_message,
             config=config,
@@ -167,17 +171,10 @@ async def query_assistant(prompt):
             tool_input = event["data"].get("input", {})
 
             # status card for the tool
-            with status as _:
-                status.update(label=f"🟢 Running **{tool_name}**...")
-                st.markdown("Searching AOU data for you...")
-                time.sleep(2)
+            with st.status(f"🟢 Running **{tool_name}**...", expanded=True) as _:
                 st.markdown(f"`{tool_input}`")
-                time.sleep(1)
-                st.markdown("Found information")
 
         elif event_type == "on_tool_end":
-            with status:
-                status.update(label=f"✅ Completed")
             tool_name = event["name"]
             output_data = event["data"].get("output", "No output returned")
 
