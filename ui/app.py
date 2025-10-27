@@ -1,27 +1,106 @@
+import time
 from pathlib import Path
+from string import Template
 
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
-
+from streamlit_theme import st_theme
 from graph.graph import build_assistant
+
+# setups
+
+bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
+user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
+
+theme = st_theme()['base']
+overlay_color = "#ffffff" if theme == "light" else "#0e1117"
+header_text_color = "#002d57" if theme == "light" else "#ffffff"
+
+suggestions = [
+    "Hello, how do I reset my password?",
+    "What services are available for students?",
+    "Show me the latest announcements."
+]
+
 def debugger(message):
     YELLOW = "\033[93m"
     RESET = "\033[0m"
     print(f"{YELLOW}{message}{RESET}")
 
-st.title("AOU Assistant")
+# page code
 
-bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
-user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
+st.set_page_config(
+    page_title="AOUNet",
+    page_icon=str(bot_icon_path),
+)
+
+# overriding styles/creating elements and making them adapt to ui theme change
+
+st.markdown(Template("""
+<style>
+
+[data-testid="stAppViewContainer"] {
+    background-image: url("https://pbs.twimg.com/amplify_video_thumb/1759244124161462272/img/fvgB728Y-b7t5VOZ.jpg:large");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    position: relative;
+}
+
+    [data-testid="stAppViewContainer"]::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: $overlay_color;
+        opacity: 0.8;
+        z-index: 0;
+        pointer-events: none;
+    }
+    
+        header[data-testid="stHeader"]::before {
+        content: "AOUNet";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: $header_text_color;
+        pointer-events: none;
+    }
 
 
+        /* Target buttons inside columns, which we'll use for pills */
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button {
+        border: 1px solid #888888; /* Light border */
+        border-radius: 20px;       /* Rounded corners */
+        padding: 5px 15px;         /* Padding */
+        background-color: transparent; /* No background */
+        color: inherit;            /* Inherit text color */
+        font-weight: 500;
+    }
+    /* Hover effect */
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button:hover {
+        border-color: #007bff;     /* Highlight border on hover */
+        color: #007bff;            /* Highlight text on hover */
+    }
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button:focus {
+        box-shadow: none;          /* Remove default focus shadow */
+        border-color: #007bff;
+        color: #007bff;
+    }
+</style>
+""").substitute(overlay_color=overlay_color, header_text_color=header_text_color), unsafe_allow_html=True)
 
-# initialize the assistant (singleton)
+# session state init
+
 if "assistant" not in st.session_state:
     st.session_state.assistant = build_assistant()
 
-
-# initialize chat history and thread_id
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -30,6 +109,12 @@ if "thread_id" not in st.session_state:
     st.session_state.thread_id = str(uuid.uuid4())
 
 with st.sidebar:
+
+    if bot_icon_path.exists():
+        col_logo = st.columns([1, 2, 1])
+        with col_logo[1]:
+            st.image(str(bot_icon_path), width=100)
+
     st.header("Conversation Management")
 
     if st.button("Clear Conversation"):
@@ -62,18 +147,12 @@ def get_conversation_history():
         print(f"Error retrieving history: {e}")
         return []
 
-
-# display chat messages from LangGraph's memory
-for message in get_conversation_history():
-    role = message["role"]
-    icon_path = bot_icon_path if role == "assistant" else user_icon_path
-    with st.chat_message(role, avatar=icon_path):
-        st.write(message["content"])
-
 async def query_assistant(prompt):
     """token-by-token streaming"""
     human_message = {"messages": [HumanMessage(content=prompt)]}
     config = {"configurable": {"thread_id": st.session_state.thread_id}}
+
+    status = st.status("",expanded=True)
 
     async for event in st.session_state.assistant.astream_events(
             human_message,
@@ -88,10 +167,17 @@ async def query_assistant(prompt):
             tool_input = event["data"].get("input", {})
 
             # status card for the tool
-            with st.status(f"🟢 Running **{tool_name}**...", expanded=True) as _:
+            with status as _:
+                status.update(label=f"🟢 Running **{tool_name}**...")
+                st.markdown("Searching AOU data for you...")
+                time.sleep(2)
                 st.markdown(f"`{tool_input}`")
+                time.sleep(1)
+                st.markdown("Found information")
 
         elif event_type == "on_tool_end":
+            with status:
+                status.update(label=f"✅ Completed")
             tool_name = event["name"]
             output_data = event["data"].get("output", "No output returned")
 
@@ -109,7 +195,35 @@ async def query_assistant(prompt):
                 yield chunk.content
 
 
-if prompt := st.chat_input("What is up?"):
+chat_history = get_conversation_history()
+
+# display chat messages from LangGraph's memory
+for message in chat_history:
+    role = message["role"]
+    icon_path = bot_icon_path if role == "assistant" else user_icon_path
+    with st.chat_message(role, avatar=icon_path):
+        st.write(message["content"])
+
+
+prompt = None
+
+# if we do not have any history show the pills
+if not chat_history:
+    st.write("What's on your mind today?")
+
+    # creating columns based on suggestions count
+    cols = st.columns(len(suggestions))
+
+    for i, (col, prompt_text) in enumerate(zip(cols, suggestions)):
+        with col:
+            # if a button is clicked, set the 'prompt' variable
+            if st.button(prompt_text, key=f"pill_{i}", use_container_width=True):
+                prompt = prompt_text
+
+if chat_input_prompt := st.chat_input("What is up?"):
+    prompt = chat_input_prompt
+
+if prompt:
     # display user message
     with st.chat_message("user", avatar=user_icon_path):
         st.write(prompt)
