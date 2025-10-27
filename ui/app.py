@@ -111,7 +111,7 @@ async def query_assistant(prompt):
 
 if prompt := st.chat_input("What is up?"):
     # display user message
-    with st.chat_message("user", user_icon_path):
+    with st.chat_message("user", avatar=user_icon_path):
         st.write(prompt)
 
     # display assistant message with streaming
