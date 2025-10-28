@@ -6,7 +6,7 @@ from tqdm import tqdm
 from config import *
 from logger_config import get_logger
 
-q_a_input_file_path = "data/json/aou_rag_dataset_cleaned.json"
+q_a_input_file_path = "data/json/general_aou_rag_data_cleaned.json"
 pdf_markdown_json_input_file_path = "data/mds_chunked/chunks.jsonl"
 batch_size = 100
 

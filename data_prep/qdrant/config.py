@@ -4,8 +4,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from sentence_transformers import SentenceTransformer
 from common.logger_config import get_logger
-q_a_collection_name = "q_a_aou_data"
+q_a_collection_name = "general_qa_aou_data"
 pdf_collection_name = "pdf_aou_data"
+conversation_collection_name = "modules_tutors_conversation_aou_data"
 model_name = "multi-qa-MiniLM-L6-cos-v1"
 
 logger = get_logger("QUADRANT_CONFIG")
@@ -96,6 +97,9 @@ def get_pdf_collection():
     """Get PDF collection client"""
     return ensure_collection(pdf_collection_name)
 
+def get_conversation_collection():
+    """Get conversation collection client"""
+    return ensure_collection(conversation_collection_name)
 
 def get_collection(collection_name):
     """Get collection by name"""
@@ -112,7 +116,7 @@ def query_all_collections(query_text, n_results=5):
 
     results = []
 
-    for collection_name in [q_a_collection_name, pdf_collection_name]:
+    for collection_name in [q_a_collection_name, pdf_collection_name, conversation_collection_name]:
         search_results = client.search(
             collection_name=collection_name,
             query_vector=query_vector,
@@ -122,3 +126,22 @@ def query_all_collections(query_text, n_results=5):
         results.extend(documents)
 
     return results
+
+
+if __name__ == '__main__':
+    query = "Who is Abrar?"
+    result = query_all_collections(query)
+    print("="*30, query, "="*30)
+    for row in result:
+        print(row)
+    print("="*60)
+    query = "Who teaches TM354??"
+    result = query_all_collections(query)
+    print("=" * 30, query, "=" * 30)
+    for row in result:
+        print(row)
+    query = "how can I apply at aou?"
+    result = query_all_collections(query)
+    print("=" * 30, query, "=" * 30)
+    for row in result:
+        print(row)
