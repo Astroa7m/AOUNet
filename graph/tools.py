@@ -14,8 +14,8 @@ def search_aou_site(query: str) -> list[dict[str, str]]:
     query1 = f"{query} - site:https://www.arabou.edu.kw/"
     query2 = f"{query} - site:https://www.aou.edu.om/"
     with DDGS() as ddgs:
-        results1 = ddgs.text(query1, max_results=10)
-        results2 = ddgs.text(query2, max_results=10)
+        results1 = ddgs.text(query1, max_results=5)
+        results2 = ddgs.text(query2, max_results=5)
         results = results1 + results2
         return results
 

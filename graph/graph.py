@@ -1,6 +1,8 @@
+import sys
+from copy import copy
 from typing import Literal, Dict, Any
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
@@ -10,9 +12,25 @@ from langgraph.types import Command
 from common.helpers import llm
 from common.pretty_print import pretty_print_messages
 from data_prep.qdrant.config import query_all_collections
-from graph.prompt import RETRIEVAL_PROMPT
+from graph.prompt import RETRIEVAL_PROMPT, AOU_NET_SYSTEM_PROMPT
 from graph.schema import AgentState, AgentRouterSchema
 from graph.tools import search_aou_site
+
+# todo: add system message at 0 of whole convo ✅
+# todo: fix printing of retrieval to make sure it prints correctly
+# todo: test in all terminal/langgraph/streamlit
+# todo: trace context before cleaning up
+# todo: fix unnecessarily tool call
+# todo: fix unnecessarily retrieval
+# todo: fix graph logic (normal llm? + retrieval fist?)
+# todo: let llm query the collection itself
+# todo: monitor why it is slow tho it uses retrieval
+# todo: add tool message to message history in ui
+# todo: add debugging prints or loggers for each step to monitor state change and stateless llm calls
+# todo: implement reranker top-k
+# todo: let llm call retrieval node = better prompt = multiple fetching + reranker
+# todo: add previous n messages to router
+# todo: consider adding another router label
 
 # ============================================================================
 # TOOLS DEFINITION
@@ -58,6 +76,8 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
 
     try:
         results = query_all_collections(query)
+        # for debugging
+        print(f"collections result: {results}",file=sys.stderr, flush=True)
     except Exception as e:
         print(f"Error querying collection: {e}")
 
@@ -66,6 +86,28 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
         "query": query,
         "messages": state['messages']
     }
+
+
+def add_system_message_if_needed(state: MessagesState) -> dict:
+    """Add system message only if this is the first message in the conversation."""
+
+    # check if we already have a system message
+    has_system_message = any(isinstance(msg, SystemMessage) for msg in state['messages'])
+
+    if not has_system_message:
+        system_message = SystemMessage(AOU_NET_SYSTEM_PROMPT)
+        # getting user message
+        user_message = state["messages"][0]
+        # preparing to remove user message from state
+        to_remove = [RemoveMessage(user_message.id)]
+        # making a copy of the user message and changing its id to not interfer wiht deletion
+        to_add_user_message = copy(user_message)
+        to_add_user_message.id = user_message.id + "first"
+        # adding system first then user message
+        to_add = [system_message, to_add_user_message]
+        return {"messages": to_remove + to_add}
+
+    return {"messages": []}
 
 
 def call_llm(state: AgentState) -> Dict[str, Any]:
@@ -215,7 +257,7 @@ def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     )
     builder.add_edge("cleanup_state", END)
 
-    # after tool execution, increment counter and loop back to LLM
+    # after tool execution, loop back to LLM
     builder.add_edge("tool_handler", "call_llm")
 
     return builder.compile()
@@ -252,7 +294,7 @@ def normal_llm(state: MessagesState):
     return {"messages": [response]}
 
 
-def cleanup_state(state: AgentState) -> Dict[str, Any]:
+def cleanup_state(state: AgentState) -> MessagesState:
     """Clean up temporary state after query completion, keep only conversation."""
 
     # keep only user query and final AI response for conversation history
@@ -260,7 +302,7 @@ def cleanup_state(state: AgentState) -> Dict[str, Any]:
 
     # find the last user message (current query)
     last_human_msg = None
-    for msg in state['messages']:
+    for msg in reversed(state['messages']):
         if isinstance(msg, HumanMessage):
             last_human_msg = msg
             break
@@ -274,25 +316,39 @@ def cleanup_state(state: AgentState) -> Dict[str, Any]:
                 final_ai_msg = msg
                 break
 
+    remove_message = None
+    for msg in reversed(state['messages']):
+        if isinstance(msg, ToolMessage):
+            # removing redundant tool result from chat history after the model has answered to reduce chat history size
+            remove_message = RemoveMessage(msg.id)
+            break
+
     if last_human_msg:
         messages_to_keep.append(last_human_msg)
     if final_ai_msg:
         messages_to_keep.append(final_ai_msg)
 
+
+    print("final messages are")
+    for m in messages_to_keep:
+        print(type(m), m)
+    print("whole messages")
+    for m in state['messages']+messages_to_keep:
+        print(type(m), m)
     return {
-        "messages": messages_to_keep,
-        "retrieval_result": [],  # Clear retrieval
-        "query": "",  # Clear query
+        "messages": [remove_message] + messages_to_keep
     }
 
 
 def build_assistant():
     overall_workflow = (
         StateGraph(AgentState)
+        .add_node("add_system_message", add_system_message_if_needed)
         .add_node(agent_router)
         .add_node("aou_retrieval_graph", build_aou_retrieval_graph())
         .add_node("normal_llm", normal_llm)
-        .add_edge(START, "agent_router")
+        .add_edge(START, "add_system_message")
+        .add_edge("add_system_message", "agent_router")
         .add_edge("normal_llm", END)
     )
     memory = MemorySaver()

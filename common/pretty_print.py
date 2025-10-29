@@ -14,6 +14,9 @@ DIM = "\033[2m"
 
 
 def pretty_print_messages(messages):
+    print("whole messages from pretty:")
+    for m in messages:
+        print(type(m), m)
     print(f"\n{BOLD}{MAGENTA}{'=' * 80}")
     print("📜  CONVERSATION HISTORY")
     print(f"{'=' * 80}{RESET}\n")
@@ -27,7 +30,7 @@ def pretty_print_messages(messages):
         elif isinstance(message, SystemMessage):
             role = f"{BOLD}{YELLOW}⚙️ System"
         else:
-            role = f"{BOLD}{CYAN}🧩 Other"
+            role = f"{BOLD}{CYAN}🧩 Other: {type(message)}"
 
         print(f"{role} {RESET}(message {i})")
         print(f"{'-' * 60}")
