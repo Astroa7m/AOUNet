@@ -1,43 +1,30 @@
 import sys
 from copy import copy
-from typing import Literal, Dict, Any
+from typing import Literal
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command
 
 from common.helpers import llm
 from common.pretty_print import pretty_print_messages
-from data_prep.qdrant.config import query_all_collections
-from graph.prompt import RETRIEVAL_PROMPT, AOU_NET_SYSTEM_PROMPT
+from graph.prompt import AOU_NET_SYSTEM_PROMPT
 from graph.schema import AgentState, AgentRouterSchema
-from graph.tools import search_aou_site
+from graph.tools import *
 
-# todo: add system message at 0 of whole convo ✅
-# todo: fix printing of retrieval to make sure it prints correctly
-# todo: test in all terminal/langgraph/streamlit
-# todo: trace context before cleaning up
-# todo: fix unnecessarily tool call
-# todo: fix unnecessarily retrieval
-# todo: fix graph logic (normal llm? + retrieval fist?)
-# todo: let llm query the collection itself
-# todo: monitor why it is slow tho it uses retrieval
-# todo: add tool message to message history in ui
+# todo: fix conversation dataset format user/assistant, might confuse llm
 # todo: add debugging prints or loggers for each step to monitor state change and stateless llm calls
 # todo: implement reranker top-k
-# todo: let llm call retrieval node = better prompt = multiple fetching + reranker
-# todo: add previous n messages to router
-# todo: consider adding another router label
+# todo: fix tool loop when asked + monitor retrieve context
 
 # ============================================================================
 # TOOLS DEFINITION
 # ============================================================================
 
 
-tools = [search_aou_site]
+tools = [searching_aou_site, retrieve_aou_knowledge_base]
 llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
 
@@ -72,12 +59,12 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
             "messages": state['messages']
         }
 
-    results=[]
+    results = []
 
     try:
         results = query_all_collections(query)
         # for debugging
-        print(f"collections result: {results}",file=sys.stderr, flush=True)
+        print(f"collections result: {results}", file=sys.stderr, flush=True)
     except Exception as e:
         print(f"Error querying collection: {e}")
 
@@ -110,29 +97,67 @@ def add_system_message_if_needed(state: MessagesState) -> dict:
     return {"messages": []}
 
 
+# will use this later to rerank and optimize context
+def extract_tool_contexts(messages: list) -> dict[str, Any]:
+    """
+    Extract query and results for each tool type from recent messages.
+    Only gets the LAST occurrence of each tool to avoid mixing old results.
+    """
+
+    contexts = {
+        "knowledge_base_query": None,
+        "knowledge_base_results": [],
+        "web_search_query": None,
+        "web_search_results": [],
+    }
+
+    # find the last AIMessage with tool calls and subsequent ToolMessages
+    last_tool_call_index = None
+    for i in reversed(range(len(messages))):
+        if isinstance(messages[i], AIMessage) and messages[i].tool_calls:
+            last_tool_call_index = i
+            break
+
+    if last_tool_call_index is None:
+        return contexts
+
+    # get the AI message with tool calls
+    ai_msg_with_tools = messages[last_tool_call_index]
+
+    # map tool call IDs to their queries
+    tool_call_map = {}
+    for tool_call in ai_msg_with_tools.tool_calls:
+        tool_name = tool_call.get("name", "").lower()
+        tool_call_id = tool_call.get("id")
+        query = tool_call.get("args", {}).get("query", "")
+
+        tool_call_map[tool_call_id] = {
+            "name": tool_name,
+            "query": query
+        }
+
+    # collect ToolMessages that come after this AI message
+    for i in range(last_tool_call_index + 1, len(messages)):
+        msg = messages[i]
+        if isinstance(msg, ToolMessage):
+            tool_call_id = msg.tool_call_id
+            if tool_call_id in tool_call_map:
+                tool_info = tool_call_map[tool_call_id]
+                tool_name = tool_info["name"]
+
+                # categorize by tool type
+                if "retrieve_aou_knowledge_base" in tool_name:
+                    contexts["knowledge_base_query"] = tool_info["query"]
+                    contexts["knowledge_base_results"].append(msg.content)
+                elif "searching_aou_site" in tool_name:
+                    contexts["web_search_query"] = tool_info["query"]
+                    contexts["web_search_results"].append(msg.content)
+
+    return contexts
+
+
 def call_llm(state: AgentState) -> Dict[str, Any]:
-    context = state["retrieval_result"]
-    query = state['query']
-
-    # gather ALL context including tool results
-    all_context_parts = []
-    all_context_parts.append("=== Retrieved Documents ===")
-    all_context_parts.extend(context)
-
-    # Add tool results from message history
-    tool_results = [
-        msg.content for msg in state['messages']
-        if isinstance(msg, ToolMessage)
-    ]
-    if tool_results:
-        all_context_parts.append("\n=== Additional Search Results ===")
-        all_context_parts.extend(tool_results)
-
-    combined_context = "\n".join(all_context_parts)
-    prompt = RETRIEVAL_PROMPT.substitute(query=query, context=combined_context)
-
-    system_message = SystemMessage(content=prompt)
-    response = llm_with_tools.invoke(state['messages'] + [system_message])
+    response = llm_with_tools.invoke(state['messages'])
 
     return {"messages": [response]}
 
@@ -208,14 +233,6 @@ def tool_handler(state: dict):
 def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state"]:
     last_message = state['messages'][-1]
 
-    # DEBUG
-    print(f"📝 Content: '{last_message.content}'")
-    print(f"📝 Type: {type(last_message)}")
-    print(f"📝 Additional kwargs: {last_message.additional_kwargs}")
-    print(f"📝 Response metadata: {last_message.response_metadata}")
-    if hasattr(last_message, 'reasoning_content'):
-        print(f"💭 Reasoning content: {last_message.reasoning_content}")
-
     # If no tool calls, we have the answer
     if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
         return "cleanup_state"
@@ -228,7 +245,7 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state
 # CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
 # ============================================================================
 
-def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
+def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
     """
     Constructs the retrieval state graph that either gets data via RAG or via websearch
 
@@ -238,13 +255,14 @@ def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     builder = StateGraph(AgentState)
 
     # nodes
+    builder.add_node("add_system_message", add_system_message_if_needed)
     builder.add_node("retrieval", retrieval)
     builder.add_node("call_llm", call_llm)
     builder.add_node("tool_handler", tool_handler)
     builder.add_node("cleanup_state", cleanup_state)
     # flow
-    builder.add_edge(START, "retrieval")
-    builder.add_edge("retrieval", "call_llm")
+    builder.add_edge(START, "add_system_message")
+    builder.add_edge("add_system_message", "call_llm")
 
     # Conditional edge: continue to tools or end
     builder.add_conditional_edges(
@@ -259,33 +277,8 @@ def build_aou_retrieval_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
 
     # after tool execution, loop back to LLM
     builder.add_edge("tool_handler", "call_llm")
-
-    return builder.compile()
-
-
-# ============================================================================
-# CONSTRUCTING OVERALL GRAPH
-# ============================================================================
-
-def agent_router(state: MessagesState) -> Command[Literal["aou_retrieval_graph", 'normal_llm']]:
-    print("Got state in router", state)
-    res = llm_with_agent_router.invoke(
-        [
-            {"role": "system", "content": f"Classify the following query:\n{state['messages'][-1].content}"},
-        ]
-    )
-
-    try:
-        if res.classification == 'info':
-            goto = 'aou_retrieval_graph'
-        else:
-            goto = 'normal_llm'
-        print(f"{res.classification}: reasoning from agent router: {res.reasoning}")
-
-        return Command(goto=goto, update=state)
-
-    except Exception as e:
-        print("Exception occurred in agent_router: Fix it later mate", e)
+    memory = MemorySaver()
+    return builder.compile(checkpointer=memory)
 
 
 def normal_llm(state: MessagesState):
@@ -328,32 +321,26 @@ def cleanup_state(state: AgentState) -> MessagesState:
     if final_ai_msg:
         messages_to_keep.append(final_ai_msg)
 
-
-    print("final messages are")
-    for m in messages_to_keep:
-        print(type(m), m)
-    print("whole messages")
-    for m in state['messages']+messages_to_keep:
-        print(type(m), m)
     return {
-        "messages": [remove_message] + messages_to_keep
+        # to avoid "NotImplementedError: Unsupported message type: <class 'NoneType'>" if no tool was found
+        "messages": [remove_message] + messages_to_keep if remove_message else messages_to_keep
     }
 
 
-def build_assistant():
-    overall_workflow = (
-        StateGraph(AgentState)
-        .add_node("add_system_message", add_system_message_if_needed)
-        .add_node(agent_router)
-        .add_node("aou_retrieval_graph", build_aou_retrieval_graph())
-        .add_node("normal_llm", normal_llm)
-        .add_edge(START, "add_system_message")
-        .add_edge("add_system_message", "agent_router")
-        .add_edge("normal_llm", END)
-    )
-    memory = MemorySaver()
-    aou_assistant = overall_workflow.compile(checkpointer=memory)
-    return aou_assistant
+# def build_assistant():
+#     overall_workflow = (
+#         StateGraph(AgentState)
+#         .add_node("add_system_message", add_system_message_if_needed)
+#         .add_node(agent_router)
+#         .add_node("aou_retrieval_graph", build_aou_retrieval_graph())
+#         .add_node("normal_llm", normal_llm)
+#         .add_edge(START, "add_system_message")
+#         .add_edge("add_system_message", "agent_router")
+#         .add_edge("normal_llm", END)
+#     )
+#     memory = MemorySaver()
+#     aou_assistant = overall_workflow.compile(checkpointer=memory)
+#     return aou_assistant
 
 
 # ============================================================================

@@ -229,7 +229,7 @@ if prompt:
     with st.chat_message("assistant", avatar=bot_icon_path):
         # keep this for debugging later
         with st.spinner("Thinking... please wait"):
-            response = st.write_stream(query_assistant(prompt))
+              response = st.write_stream(query_assistant(prompt))
 
     # force rerun to refresh conversation history from checkpointer
     st.rerun()

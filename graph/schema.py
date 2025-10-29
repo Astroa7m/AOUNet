@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 class AgentState(MessagesState):
     """Enhanced state that tracks retrieval results and iterations"""
-    retrieval_result: List[str]
-    query: str
+    # retrieval_result: List[str]
+    # query: str
 
 
 class RouterSchema(BaseModel):
@@ -52,7 +52,6 @@ class AgentRouterSchema(BaseModel):
 
         'normal' - Use this only for queries that are clearly outside AOU’s domain or are general conversation, such as:
             - Greetings or casual talk (e.g., "Hello", "Thanks", "How are you?")
-            - Personal questions about the AI itself (e.g., "Who made you?", "What can you do?")
             - General knowledge questions clearly unrelated to AOU (e.g., "What's the weather?", "Tell me a joke")
 
         Behavioral note:
@@ -64,4 +63,18 @@ class AgentRouterSchema(BaseModel):
             - 'info': The default and preferred route for anything possibly AOU-related.
             - 'normal': Clearly non-AOU or social/general conversation.
         """
+    )
+
+
+
+class RerankedContext(BaseModel):
+    """Structured output for reranked and optimized context"""
+    relevant_passages: list[str] = Field(
+        description="Top relevant passages reranked by importance to the query"
+    )
+    summary: str = Field(
+        description="Brief summary of the key information found"
+    )
+    confidence: str = Field(
+        description="Confidence level: high, medium, or low"
     )

@@ -4,10 +4,11 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 from sentence_transformers import SentenceTransformer
 from common.logger_config import get_logger
+from data_prep.qdrant import get_embedding_model
+
 q_a_collection_name = "general_qa_aou_data"
 pdf_collection_name = "pdf_aou_data"
 conversation_collection_name = "modules_tutors_conversation_aou_data"
-model_name = "multi-qa-MiniLM-L6-cos-v1"
 
 logger = get_logger("QUADRANT_CONFIG")
 load_dotenv()
@@ -24,13 +25,13 @@ def is_local_qdrant():
     return "localhost" in QDRANT_URL or "127.0.0.1" in QDRANT_URL
 
 
-def get_embedding_model():
-    """Get or create the embedding model singleton"""
-    global _embedding_model
-    if _embedding_model is None:
-        logger.debug("creating new embedding model instance")
-        _embedding_model = SentenceTransformer(model_name)
-    return _embedding_model
+# def get_embedding_model():
+#     """Get or create the embedding model singleton"""
+#     global _embedding_model
+#     if _embedding_model is None:
+#         logger.debug("creating new embedding model instance")
+#         _embedding_model = SentenceTransformer(model_name)
+#     return _embedding_model
 
 
 def get_qdrant_client():

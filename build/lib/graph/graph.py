@@ -12,14 +12,14 @@ from common.pretty_print import pretty_print_messages
 from data_prep.config import get_pdf_collection, get_q_a_collection
 from graph.prompt import RETRIEVAL_PROMPT
 from graph.schema import AgentState, AgentRouterSchema
-from graph.tools import search_aou_site
+from graph.tools import searching_aou_site
 
 # ============================================================================
 # TOOLS DEFINITION
 # ============================================================================
 
 
-tools = [search_aou_site]
+tools = [searching_aou_site]
 llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
 

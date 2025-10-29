@@ -3,7 +3,7 @@ import uuid
 
 from tqdm import tqdm
 
-from config import *
+from data_prep.legacy.config import *
 from common.logger_config import get_logger
 
 q_a_input_file_path = "data/json/general_aou_rag_data_cleaned.json"
