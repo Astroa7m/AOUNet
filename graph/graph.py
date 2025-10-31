@@ -10,8 +10,8 @@ from langgraph.graph.state import CompiledStateGraph
 
 from common.helpers import llm
 from common.pretty_print import pretty_print_messages
-from graph.prompt import AOU_NET_SYSTEM_PROMPT
-from graph.schema import AgentState, AgentRouterSchema
+from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
+from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
 from graph.tools import *
 
 # todo: fix conversation dataset format user/assistant, might confuse llm
@@ -27,7 +27,7 @@ from graph.tools import *
 tools = [searching_aou_site, retrieve_aou_knowledge_base]
 llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
-
+llm_with_reranker = llm.with_structured_output(RetrieveMessageReranked, method="json_schema")
 
 # ============================================================================
 # NODE FUNCTIONS
@@ -156,6 +156,14 @@ def extract_tool_contexts(messages: list) -> dict[str, Any]:
     return contexts
 
 
+def rerank_and_optimize_retrieved(query: str, data: str) -> RetrieveMessageReranked | str:
+    try:
+        return llm_with_reranker.invoke(RERANK_PROMPT.substitute(query=query, retrieved_data=data))
+    except Exception as e:
+        print("Could not call reranker")
+        return data
+
+
 def call_llm(state: AgentState) -> Dict[str, Any]:
     response = llm_with_tools.invoke(state['messages'])
 
@@ -167,8 +175,6 @@ def tool_handler(state: dict):
 
     # list tool for tool message
     result = []
-    tool_call_count = state.get('tool_call_count', {}).copy()
-    max_calls = state.get('max_tool_calls_per_tool', 2)
     # iterate through tool calls
 
     for tool_call in state['messages'][-1].tool_calls:
@@ -183,26 +189,23 @@ def tool_handler(state: dict):
                 ))
                 continue
 
-            # Check if tool has been called too many times
-            current_count = tool_call_count.get(tool_call["name"], 0)
-
-            if current_count >= max_calls:
-                result.append(ToolMessage(
-                    content=f"⚠️ Tool '{tool_call["name"]}' has already been called {current_count} times. Maximum calls reached. Please provide an answer with the information you have.",
-                    tool_call_id=tool_call['id']
-                ))
-                continue
-
             # run the tool
             tool_res = tool.invoke(tool_call['args'])
-
-            # Increment counter
-            tool_call_count[tool_call["name"]] = current_count + 1
 
             # ensure content is a string
             if not isinstance(tool_res, str):
                 tool_res = str(tool_res)
 
+            print(50*"=","before reranked\n", tool_res)
+            # format, rerank, optimize, and return top-k for tool result (search & retrieval only) to reduce token usage
+            # only for these two tools
+            if tool.name in [searching_aou_site.name, retrieve_aou_knowledge_base.name]:
+                reranked_info = rerank_and_optimize_retrieved(tool_call['args']['query'], tool_res)
+                print(50*"=","query is\n", tool_call['args']['query'])
+                # in case of error this will be a string returning the original data without reranking
+                if isinstance(reranked_info, RetrieveMessageReranked):
+                    tool_res = str(reranked_info.messages)
+                    print(50*"=","after reranked\n", tool_res)
             # create a ToolMessage
             result.append(
                 ToolMessage(
@@ -221,70 +224,8 @@ def tool_handler(state: dict):
             )
 
     return {
-        "messages": result,
-        "tool_call_count": tool_call_count
+        "messages": result
     }
-
-
-# ============================================================================
-# CONDITIONAL EDGE FUNCTIONS
-# ============================================================================
-
-def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state"]:
-    last_message = state['messages'][-1]
-
-    # If no tool calls, we have the answer
-    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
-        return "cleanup_state"
-
-    # Execute tools
-    return "tool_handler"
-
-
-# ============================================================================
-# CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
-# ============================================================================
-
-def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
-    """
-    Constructs the retrieval state graph that either gets data via RAG or via websearch
-
-    Returns:
-        Compiled StateGraph ready for execution
-    """
-    builder = StateGraph(AgentState)
-
-    # nodes
-    builder.add_node("add_system_message", add_system_message_if_needed)
-    builder.add_node("retrieval", retrieval)
-    builder.add_node("call_llm", call_llm)
-    builder.add_node("tool_handler", tool_handler)
-    builder.add_node("cleanup_state", cleanup_state)
-    # flow
-    builder.add_edge(START, "add_system_message")
-    builder.add_edge("add_system_message", "call_llm")
-
-    # Conditional edge: continue to tools or end
-    builder.add_conditional_edges(
-        "call_llm",
-        should_continue,
-        {
-            "tool_handler": "tool_handler",
-            "cleanup_state": "cleanup_state"
-        }
-    )
-    builder.add_edge("cleanup_state", END)
-
-    # after tool execution, loop back to LLM
-    builder.add_edge("tool_handler", "call_llm")
-    memory = MemorySaver()
-    return builder.compile(checkpointer=memory)
-
-
-def normal_llm(state: MessagesState):
-    response = llm.invoke(state['messages'])
-
-    return {"messages": [response]}
 
 
 def cleanup_state(state: AgentState) -> MessagesState:
@@ -327,20 +268,58 @@ def cleanup_state(state: AgentState) -> MessagesState:
     }
 
 
-# def build_assistant():
-#     overall_workflow = (
-#         StateGraph(AgentState)
-#         .add_node("add_system_message", add_system_message_if_needed)
-#         .add_node(agent_router)
-#         .add_node("aou_retrieval_graph", build_aou_retrieval_graph())
-#         .add_node("normal_llm", normal_llm)
-#         .add_edge(START, "add_system_message")
-#         .add_edge("add_system_message", "agent_router")
-#         .add_edge("normal_llm", END)
-#     )
-#     memory = MemorySaver()
-#     aou_assistant = overall_workflow.compile(checkpointer=memory)
-#     return aou_assistant
+# ============================================================================
+# CONDITIONAL EDGE FUNCTIONS
+# ============================================================================
+
+def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state"]:
+    last_message = state['messages'][-1]
+
+    # If no tool calls, we have the answer
+    if not hasattr(last_message, 'tool_calls') or not last_message.tool_calls:
+        return "cleanup_state"
+
+    # Execute tools
+    return "tool_handler"
+
+
+# ============================================================================
+# CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
+# ============================================================================
+
+def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
+    """
+    Constructs the retrieval state graph that either gets data via RAG or via websearch
+
+    Returns:
+        Compiled StateGraph ready for execution
+    """
+    builder = StateGraph(AgentState)
+
+    # nodes
+    builder.add_node("add_system_message", add_system_message_if_needed)
+    builder.add_node("call_llm", call_llm)
+    builder.add_node("tool_handler", tool_handler)
+    builder.add_node("cleanup_state", cleanup_state)
+    # flow
+    builder.add_edge(START, "add_system_message")
+    builder.add_edge("add_system_message", "call_llm")
+
+    # Conditional edge: continue to tools or end
+    builder.add_conditional_edges(
+        "call_llm",
+        should_continue,
+        {
+            "tool_handler": "tool_handler",
+            "cleanup_state": "cleanup_state"
+        }
+    )
+    # after tool execution, loop back to LLM
+    builder.add_edge("tool_handler", "call_llm")
+    builder.add_edge("cleanup_state", END)
+
+    memory = MemorySaver()
+    return builder.compile(checkpointer=memory)
 
 
 # ============================================================================

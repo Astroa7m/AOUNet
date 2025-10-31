@@ -17,7 +17,7 @@ user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
 try:
     theme = st_theme()['base']
 except:
-    theme = 'light'
+    theme = 'dark'
 
 overlay_color = "#ffffff" if theme == "light" else "#0e1117"
 header_text_color = "#002d57" if theme == "light" else "#ffffff"

@@ -26,6 +26,28 @@ class RouterSchema(BaseModel):
         """
     )
 
+class RetrieveMessageReranked(BaseModel):
+    """Selects, refines, and organizes the most relevant information from retrieved documents."""
+    messages: List[str] = Field(
+        description="""
+        A clean, ordered list of the most relevant and clear information extracted from the retrieved items.
+
+        Each message should:
+            - Directly answer or strongly support the user's query.
+            - Be paraphrased or summarized for clarity and conciseness.
+            - Merge similar or repeated information into a single coherent statement.
+            - Exclude any irrelevant, vague, or redundant content.
+            - Preserve factual accuracy and be easy for users to read.
+
+        Output behavior:
+            - The list should be sorted from most to least relevant.
+            - Each item should be short, factual, and phrased naturally.
+            - Avoid including metadata, file names, or collection identifiers.
+
+        In short:
+            - Provide only the most useful, paraphrased information that helps the assistant generate an accurate final response.
+        """
+    )
 
 class AgentRouterSchema(BaseModel):
     """Analyzes the intent of the query and router accordingly"""

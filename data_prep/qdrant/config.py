@@ -117,7 +117,7 @@ def query_all_collections(query_text, n_results=5):
 
     results = []
 
-    for collection_name in [q_a_collection_name, pdf_collection_name, conversation_collection_name]:
+    for collection_name in [q_a_collection_name, pdf_collection_name]:
         search_results = client.search(
             collection_name=collection_name,
             query_vector=query_vector,
@@ -130,19 +130,21 @@ def query_all_collections(query_text, n_results=5):
 
 
 if __name__ == '__main__':
-    query = "Who is Abrar?"
-    result = query_all_collections(query)
-    print("="*30, query, "="*30)
-    for row in result:
-        print(row)
-    print("="*60)
-    query = "Who teaches TM354??"
-    result = query_all_collections(query)
-    print("=" * 30, query, "=" * 30)
-    for row in result:
-        print(row)
-    query = "how can I apply at aou?"
-    result = query_all_collections(query)
-    print("=" * 30, query, "=" * 30)
-    for row in result:
-        print(row)
+    # query = "Who is Abrar?"
+    # result = query_all_collections(query)
+    # print("="*30, query, "="*30)
+    # for row in result:
+    #     print(row)
+    # print("="*60)
+    # query = "Who teaches TM354??"
+    # result = query_all_collections(query)
+    # print("=" * 30, query, "=" * 30)
+    # for row in result:
+    #     print(row)
+    # query = "how can I apply at aou?"
+    # result = query_all_collections(query)
+    # print("=" * 30, query, "=" * 30)
+    # for row in result:
+    #     print(row)
+    res = query_all_collections("who teaches tm354")
+    print(res)
