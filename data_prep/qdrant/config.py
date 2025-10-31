@@ -1,14 +1,12 @@
 import os
+
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
-from sentence_transformers import SentenceTransformer
+
+from common import *
 from common.logger_config import get_logger
 from data_prep.qdrant import get_embedding_model
-
-q_a_collection_name = "general_qa_aou_data"
-pdf_collection_name = "pdf_aou_data"
-conversation_collection_name = "modules_tutors_conversation_aou_data"
 
 logger = get_logger("QUADRANT_CONFIG")
 load_dotenv()
@@ -98,12 +96,9 @@ def get_pdf_collection():
     """Get PDF collection client"""
     return ensure_collection(pdf_collection_name)
 
-def get_conversation_collection():
-    """Get conversation collection client"""
-    return ensure_collection(conversation_collection_name)
 
-def get_collection(collection_name):
-    """Get collection by name"""
+def get_csv_collection(collection_name):
+    """Get csv collection based on name client"""
     return ensure_collection(collection_name)
 
 
@@ -116,15 +111,15 @@ def query_all_collections(query_text, n_results=5):
     query_vector = embed_fn([query_text])[0]
 
     results = []
-
-    for collection_name in [q_a_collection_name, pdf_collection_name]:
-        search_results = client.search(
-            collection_name=collection_name,
-            query_vector=query_vector,
-            limit=n_results,
-        )
-        documents = [hit.payload.get("document", "") for hit in search_results]
-        results.extend(documents)
+    collections = [tutors_collection_name, modules_collection_name, q_a_collection_name, pdf_collection_name]
+    for collection_name in collections:
+            search_results = client.search(
+                collection_name=collection_name,
+                query_vector=query_vector,
+                limit=n_results,
+            )
+            documents = [hit.payload.get("document", "") for hit in search_results]
+            results.extend(documents)
 
     return results
 
@@ -146,5 +141,12 @@ if __name__ == '__main__':
     # print("=" * 30, query, "=" * 30)
     # for row in result:
     #     print(row)
-    res = query_all_collections("who teaches tm354")
-    print(res)
+    query = "who teaches tm354?"
+    print("query modules")
+    res = query_all_collections(query)
+    for doc in res:
+        print(doc)
+    print("query tutors")
+    res = query_all_collections(query)
+    for doc in res:
+        print(doc)

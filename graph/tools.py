@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Literal
 
 from ddgs import DDGS
 from langchain_core.tools import tool
@@ -29,17 +29,14 @@ def searching_aou_site(query: str) -> list[dict[str, Any]] | str:
 @tool
 def retrieve_aou_knowledge_base(query: str) -> str:
     """
-    Retrieves relevant documents from AOU knowledge base.
-    Use this when you need information about AOU programs, admissions, or policies. In most cases this can help you answer anything
-
-    You are allowed to use it multiple times with different queries if needed to retrieve additional information
+    Retrieve relevant documents from AOU knowledge base.
 
     Args:
-        query: The search query to find relevant documents
-
+        query: The question to search for.
     Returns:
         Retrieved documents as formatted text
     """
+
     try:
         results = query_all_collections(query)
         if not results:
