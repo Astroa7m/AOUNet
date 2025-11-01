@@ -9,8 +9,10 @@ from data_prep.qdrant.config import query_all_collections
 @tool
 def searching_aou_site(query: str) -> list[dict[str, Any]] | str:
     """
-    Search for information related to the user query about AOU Oman.
-    This function search the university website for relative information
+    Searches Online for information related to the user query about AOU Oman.
+    This function search the university website for relative information. Use it only if other tools did not work and in worst cases.
+    Try always not use it unless it is extremely necessary. Always prioritize using retrieve_aou_knowledge_base for most cases, unless user explicitly ask for searching
+    If the information gotten from this function are enough return them immediately.
     :param query: user query
     :return: list of dict with the keys [title, href, body] containing most relevant web searches
     """
@@ -30,7 +32,7 @@ def searching_aou_site(query: str) -> list[dict[str, Any]] | str:
 def retrieve_aou_knowledge_base(query: str) -> str:
     """
     Retrieve relevant documents from AOU knowledge base.
-
+    If the information gotten from this function are enough return them immediately.
     Args:
         query: The question to search for.
     Returns:

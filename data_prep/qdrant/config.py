@@ -111,7 +111,7 @@ def query_all_collections(query_text, n_results=5):
     query_vector = embed_fn([query_text])[0]
 
     results = []
-    collections = [tutors_collection_name, modules_collection_name, q_a_collection_name, pdf_collection_name]
+    collections = [tutors_collection_name, modules_collection_name, q_a_collection_name]
     for collection_name in collections:
             search_results = client.search(
                 collection_name=collection_name,
