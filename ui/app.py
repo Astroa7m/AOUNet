@@ -14,13 +14,21 @@ user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
 
 
 # have to set it initially
-try:
-    theme = st_theme()['base']
-except:
-    theme = 'dark'
+def get_theme():
+    try:
+        return st_theme()['base']
+    except:
+        return 'dark'
 
-overlay_color = "#ffffff" if theme == "light" else "#0e1117"
-header_text_color = "#002d57" if theme == "light" else "#ffffff"
+@st.cache_data
+def get_theme_colors(theme):
+    overlay_color = "#ffffff" if theme == "light" else "#0e1117"
+    header_text_color = "#002d57" if theme == "light" else "#ffffff"
+    return overlay_color, header_text_color
+
+theme = get_theme()
+overlay_color, header_text_color = get_theme_colors(theme)
+
 
 suggestions = [
     "Hello, how do I reset my password?",
@@ -41,8 +49,9 @@ st.set_page_config(
 )
 
 # overriding styles/creating elements and making them adapt to ui theme change
-
-st.markdown(Template("""
+@st.cache_data
+def get_custom_styles(overlay_color, header_text_color):
+    return Template("""
 <style>
 
 [data-testid="stAppViewContainer"] {
@@ -66,7 +75,7 @@ st.markdown(Template("""
         z-index: 0;
         pointer-events: none;
     }
-    
+
         header[data-testid="stHeader"]::before {
         content: "AOUNet";
         position: absolute;
@@ -100,7 +109,10 @@ st.markdown(Template("""
         color: #007bff;
     }
 </style>
-""").substitute(overlay_color=overlay_color, header_text_color=header_text_color), unsafe_allow_html=True)
+""").substitute(overlay_color=overlay_color, header_text_color=header_text_color)
+
+
+st.markdown(get_custom_styles(overlay_color, header_text_color), unsafe_allow_html=True)
 
 # session state init
 
@@ -192,10 +204,12 @@ async def query_assistant(prompt):
                 yield chunk.content
 
 
-chat_history = get_conversation_history()
+# only fetch history if messages cache is empty
+if not st.session_state.messages:
+    st.session_state.messages = get_conversation_history()
 
 # display chat messages from LangGraph's memory
-for message in chat_history:
+for message in st.session_state.messages:
     role = message["role"]
     icon_path = bot_icon_path if role == "assistant" else user_icon_path
     with st.chat_message(role, avatar=icon_path):
@@ -205,7 +219,7 @@ for message in chat_history:
 prompt = None
 
 # if we do not have any history show the pills
-if not chat_history:
+if not st.session_state.messages:
     st.write("What's on your mind today?")
 
     # creating columns based on suggestions count
@@ -228,8 +242,8 @@ if prompt:
     # display assistant message with streaming
     with st.chat_message("assistant", avatar=bot_icon_path):
         # keep this for debugging later
-        with st.spinner("Thinking... please wait"):
-              response = st.write_stream(query_assistant(prompt))
-
+            response = st.write_stream(query_assistant(prompt))
+    st.session_state.messages.append({"role": "assistant", "content": response})
     # force rerun to refresh conversation history from checkpointer
-    st.rerun()
+    # we will let streamlit handle this naturally
+    # st.rerun()
