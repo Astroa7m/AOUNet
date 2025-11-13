@@ -1,3 +1,4 @@
+import base64
 import time
 from pathlib import Path
 from string import Template
@@ -13,7 +14,7 @@ from ui.helpers.query_logger import QueryLogger
 
 bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
 user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
-
+bg_image_path = Path(__file__).parent / "assets" / "bg.jpg"
 # Initialize logger
 @st.cache_resource
 def get_logger():
@@ -57,14 +58,20 @@ st.set_page_config(
     page_icon=str(bot_icon_path),
 )
 
+@st.cache_data
+def get_base64_image(image_path):
+    """Convert image to base64 string"""
+    with open(image_path, "rb") as img_file:
+        return base64.b64encode(img_file.read()).decode()
+
 # overriding styles/creating elements and making them adapt to ui theme change
 @st.cache_data
-def get_custom_styles(overlay_color, header_text_color):
+def get_custom_styles(overlay_color, header_text_color, bg_image_base64):
     return Template("""
 <style>
 
 [data-testid="stAppViewContainer"] {
-    background-image: url("https://pbs.twimg.com/amplify_video_thumb/1759244124161462272/img/fvgB728Y-b7t5VOZ.jpg:large");
+    background-image: url("data:image/jpeg;base64,$bg_image");
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -118,10 +125,10 @@ def get_custom_styles(overlay_color, header_text_color):
         color: #007bff;
     }
 </style>
-""").substitute(overlay_color=overlay_color, header_text_color=header_text_color)
+""").substitute(overlay_color=overlay_color, header_text_color=header_text_color, bg_image=bg_image_base64)
 
 
-st.markdown(get_custom_styles(overlay_color, header_text_color), unsafe_allow_html=True)
+st.markdown(get_custom_styles(overlay_color, header_text_color, get_base64_image(bg_image_path) if bg_image_path.exists() else ""), unsafe_allow_html=True)
 
 # session state init
 
