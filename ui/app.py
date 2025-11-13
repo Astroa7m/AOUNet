@@ -6,12 +6,21 @@ import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 from streamlit_theme import st_theme
 from graph.graph import build_assistant
+from ui.helpers.client import get_client_info
+from ui.helpers.query_logger import QueryLogger
 
 # setups
 
 bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
 user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
 
+# Initialize logger
+@st.cache_resource
+def get_logger():
+    """Initialize query logger once"""
+    return QueryLogger()  # Reads from DATABASE_URL env variable
+
+logger = get_logger()
 
 # have to set it initially
 def get_theme():
@@ -167,41 +176,59 @@ def get_conversation_history():
 
 async def query_assistant(prompt):
     """token-by-token streaming"""
-    human_message = {"messages": [HumanMessage(content=prompt)]}
-    config = {"configurable": {"thread_id": st.session_state.thread_id}}
+    # Get client info
+    error_msg = None
+    full_response = ""
+    try:
+        human_message = {"messages": [HumanMessage(content=prompt)]}
+        config = {"configurable": {"thread_id": st.session_state.thread_id}}
 
-    async for event in st.session_state.assistant.astream_events(
-            human_message,
-            config=config,
-            version="v1"
-    ):
-        event_type = event["event"]
+        async for event in st.session_state.assistant.astream_events(
+                human_message,
+                config=config,
+                version="v1"
+        ):
+            event_type = event["event"]
 
-        # detect when a tool is about to be called
-        if event_type == "on_tool_start":
-            tool_name = event["name"]
-            tool_input = event["data"].get("input", {})
+            # detect when a tool is about to be called
+            if event_type == "on_tool_start":
+                tool_name = event["name"]
+                tool_input = event["data"].get("input", {})
 
-            # status card for the tool
-            with st.status(f"🟢 Running **{tool_name}**...", expanded=True) as _:
-                st.markdown(f"`{tool_input}`")
+                # status card for the tool
+                with st.status(f"🟢 Running **{tool_name}**...", expanded=True) as _:
+                    st.markdown(f"`{tool_input}`")
 
-        elif event_type == "on_tool_end":
-            tool_name = event["name"]
-            output_data = event["data"].get("output", "No output returned")
+            elif event_type == "on_tool_end":
+                tool_name = event["name"]
+                full_response += f"\nUsed tool: {tool_name}\n"
+                output_data = event["data"].get("output", "No output returned")
 
-            # just for debugging
-            if debugging := False:
-                with st.status(f"✅ **{tool_name}** completed", expanded=True) as status:
-                    st.markdown("**Response:**")
-                    st.code(str(output_data), language="json")
-                    status.update(label=f"Tool `{tool_name}` finished", state="complete")
+                # just for debugging
+                if debugging := False:
+                    with st.status(f"✅ **{tool_name}** completed", expanded=True) as status:
+                        st.markdown("**Response:**")
+                        st.code(str(output_data), language="json")
+                        status.update(label=f"Tool `{tool_name}` finished", state="complete")
 
-        # stream the actual content tokens
-        elif event_type == "on_chat_model_stream":
-            chunk = event["data"].get("chunk")
-            if chunk and hasattr(chunk, "content") and chunk.content:
-                yield chunk.content
+            # stream the actual content tokens
+            elif event_type == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    full_response += chunk.content
+                    yield chunk.content
+    except Exception as e:
+        error_msg = str(e)
+        print(f"Error in query_assistant: {e}")
+        raise
+    finally:
+        # update the log with the complete response
+        if log_id:
+            logger.log_query(
+                id=log_id,
+                response=full_response if full_response else "empty response",
+                error_message=error_msg
+            )
 
 
 # only fetch history if messages cache is empty
@@ -235,6 +262,19 @@ if chat_input_prompt := st.chat_input("What is up?"):
     prompt = chat_input_prompt
 
 if prompt:
+    # get client info
+    ip_address, user_agent = get_client_info()
+
+    # log the query immediately and get the log ID
+    log_id = logger.log_query(
+        query_text=prompt,
+        ip_address=ip_address,
+        user_agent=user_agent
+    ).data[0]['id']
+
+    # adding user message to history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
     # display user message
     with st.chat_message("user", avatar=user_icon_path):
         st.write(prompt)
@@ -242,8 +282,14 @@ if prompt:
     # display assistant message with streaming
     with st.chat_message("assistant", avatar=bot_icon_path):
         # keep this for debugging later
+        try:
             response = st.write_stream(query_assistant(prompt))
-    st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.messages.append({"role": "assistant", "content": response})
+        except Exception as e:
+            st.error(f"An error occurred processing your query., {e}")
+            # update log with error if response generation failed
+            if log_id:
+                logger.log_query(id=log_id, error_message=str(e))
     # force rerun to refresh conversation history from checkpointer
     # we will let streamlit handle this naturally
     # st.rerun()
