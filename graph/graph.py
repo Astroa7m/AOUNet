@@ -8,8 +8,9 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from langchain.agents import create_agent
-from common.helpers import llm
+from common.helpers import llm, summarization_model
 from common.pretty_print import pretty_print_messages
+from langchain.agents.middleware import SummarizationMiddleware
 import sys
 
 def is_streamlit():
@@ -342,8 +343,16 @@ def get_agent():
         tools=tools,
         system_prompt=AOU_NET_SYSTEM_PROMPT,
         checkpointer=memory,
-
+        middleware=[
+            SummarizationMiddleware(
+                model=summarization_model,
+                trigger=("tokens", 4000),
+                keep=("messages", 20),
+            ),
+        ],
     )
+
+
 if __name__ == "__main__":
     config = {"configurable": {"thread_id": "memory_test"}}  # persistent thread_id
     # agent = build_assistant()

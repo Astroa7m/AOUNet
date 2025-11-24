@@ -8,8 +8,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
-llm = ChatGroq(model="openai/gpt-oss-20b", api_key=api_key)
+api_key1 = os.getenv("GROQ_API_KEY1")
+llm = ChatGroq(model="openai/gpt-oss-20b", api_key=api_key1)
+api_key2 = os.getenv("GROQ_API_KEY2")
+summarization_model = ChatGroq(model="llama-3.1-8b-instant", api_key=api_key2)
 
 
 def visualize_graph(graph: CompiledStateGraph):
