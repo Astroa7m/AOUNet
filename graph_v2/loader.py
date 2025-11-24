@@ -17,7 +17,7 @@ for md_file in Path("../data/mds").glob("*.md"):
     with open(md_file, encoding="utf-8") as f:
         markdown_docs.append(Document(page_content=f.read(), metadata={"source": str(md_file)}))
 
-all_docs = qa_docs + csv_docs_1 + csv_docs_2 + markdown_docs
+all_docs = qa_docs #+ csv_docs_1 + csv_docs_2 + markdown_docs
 
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000,          # characters per chunk

@@ -7,12 +7,23 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
-
+from langchain.agents import create_agent
 from common.helpers import llm
 from common.pretty_print import pretty_print_messages
-from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
-from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
-from graph.tools import *
+import sys
+
+def is_streamlit():
+    # running inside Streamlit
+    return "streamlit" in sys.modules
+
+if is_streamlit():
+    from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
+    from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
+    from graph.tools import *
+else:
+    from prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
+    from schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
+    from tools import *
 
 # todo: fix conversation dataset format user/assistant, might confuse llm
 # todo: add debugging prints or loggers for each step to monitor state change and stateless llm calls
@@ -286,6 +297,7 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state
 # ============================================================================
 # CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
 # ============================================================================
+memory = MemorySaver()
 
 def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
     """
@@ -318,17 +330,24 @@ def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
     builder.add_edge("tool_handler", "call_llm")
     builder.add_edge("cleanup_state", END)
 
-    memory = MemorySaver()
     return builder.compile(checkpointer=memory)
 
 
 # ============================================================================
 # TEST
 # ============================================================================
+def get_agent():
+    return create_agent(
+        model=llm,
+        tools=tools,
+        system_prompt=AOU_NET_SYSTEM_PROMPT,
+        checkpointer=memory,
 
+    )
 if __name__ == "__main__":
     config = {"configurable": {"thread_id": "memory_test"}}  # persistent thread_id
-    agent = build_assistant()
+    # agent = build_assistant()
+    agent = get_agent()
 
     while True:
         user_input = input("You: ")

@@ -6,7 +6,7 @@ from string import Template
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
 from streamlit_theme import st_theme
-from graph.graph import build_assistant
+from graph.graph import build_assistant, get_agent
 from ui.helpers.client import get_client_info
 from ui.helpers.query_logger import QueryLogger
 
@@ -133,7 +133,8 @@ st.markdown(get_custom_styles(overlay_color, header_text_color, get_base64_image
 # session state init
 
 if "assistant" not in st.session_state:
-    st.session_state.assistant = build_assistant()
+    #st.session_state.assistant = build_assistant()
+    st.session_state.assistant = get_agent()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []

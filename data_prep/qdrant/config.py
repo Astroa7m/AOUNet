@@ -141,12 +141,21 @@ if __name__ == '__main__':
     # print("=" * 30, query, "=" * 30)
     # for row in result:
     #     print(row)
-    query = "who teaches tm354?"
-    print("query modules")
-    res = query_all_collections(query)
-    for doc in res:
-        print(doc)
-    print("query tutors")
-    res = query_all_collections(query)
-    for doc in res:
-        print(doc)
+    # query = "who teaches tm354?"
+    # print("query modules")
+    # res = query_all_collections(query)
+    # for doc in res:
+    #     print(doc)
+    # print("query tutors")
+    # res = query_all_collections(query)
+    # for doc in res:
+    #     print(doc)
+
+    query = input("query: ")
+
+    while query != "exit":
+        answers = query_all_collections(query)
+        for r in answers:
+            print(r)
+            print("/"*300)
+        query = input("query: ")
