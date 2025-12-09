@@ -145,3 +145,10 @@ $retrieved_data
 Return only a clean, ordered list of the most relevant and clear information. 
 Each list item should be a single paraphrased statement, sorted from most to least relevant.
 """)
+
+
+AGENT_ROUTER_PROMPT = """
+Classify the query rules
+1. tutors_modules: When the query is about tutors or modules
+2. normal: normal chatting, might be faq, policies, study plans, general queries. Might also includes individuals that are not tutors.
+"""

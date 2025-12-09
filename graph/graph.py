@@ -1,24 +1,26 @@
 import sys
 from copy import copy
-from typing import Literal
 
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
-from langchain.agents import create_agent
+from langgraph.types import Command
+
 from common.helpers import llm, summarization_model
 from common.pretty_print import pretty_print_messages
-from langchain.agents.middleware import SummarizationMiddleware
-import sys
+
 
 def is_streamlit():
     # running inside Streamlit
     return "streamlit" in sys.modules
 
+
 if is_streamlit():
-    from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
+    from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT, AGENT_ROUTER_PROMPT
     from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
     from graph.tools import *
 else:
@@ -41,10 +43,12 @@ llm_with_tools = llm.bind_tools(tools)
 llm_with_agent_router = llm.with_structured_output(AgentRouterSchema, method="json_schema")
 llm_with_reranker = llm.with_structured_output(RetrieveMessageReranked, method="json_schema")
 
+
 # ============================================================================
 # NODE FUNCTIONS
 # ============================================================================
 
+# not using it anymore, might remove later
 def retrieval(state: AgentState) -> Dict[str, Any]:
     """
     Retrieves relevant documents from collections based on the user's query.
@@ -87,6 +91,24 @@ def retrieval(state: AgentState) -> Dict[str, Any]:
     }
 
 
+def router(state: AgentState) -> Command[Literal["sql_subgraph", "call_llm"]]:
+    message = state["messages"][-1]
+    res = llm_with_agent_router.invoke(
+        [
+            {"role": "system", "content": AGENT_ROUTER_PROMPT},
+            {"role": "user", "content": message},
+        ]
+    )
+    update = AIMessage(res.reasoning)
+
+    if res.classification == "tutors_modules":
+        goto = "sql_subgraph"
+    elif res.classification == "normal":
+        goto = "call_llm"
+    else:
+        raise ValueError(f"Invalid classification {res.classification}")
+    return Command(goto=goto, update=update)
+
 def add_system_message_if_needed(state: MessagesState) -> dict:
     """Add system message only if this is the first message in the conversation."""
 
@@ -107,65 +129,6 @@ def add_system_message_if_needed(state: MessagesState) -> dict:
         return {"messages": to_remove + to_add}
 
     return {"messages": []}
-
-
-# will use this later to rerank and optimize context
-def extract_tool_contexts(messages: list) -> dict[str, Any]:
-    """
-    Extract query and results for each tool type from recent messages.
-    Only gets the LAST occurrence of each tool to avoid mixing old results.
-    """
-
-    contexts = {
-        "knowledge_base_query": None,
-        "knowledge_base_results": [],
-        "web_search_query": None,
-        "web_search_results": [],
-    }
-
-    # find the last AIMessage with tool calls and subsequent ToolMessages
-    last_tool_call_index = None
-    for i in reversed(range(len(messages))):
-        if isinstance(messages[i], AIMessage) and messages[i].tool_calls:
-            last_tool_call_index = i
-            break
-
-    if last_tool_call_index is None:
-        return contexts
-
-    # get the AI message with tool calls
-    ai_msg_with_tools = messages[last_tool_call_index]
-
-    # map tool call IDs to their queries
-    tool_call_map = {}
-    for tool_call in ai_msg_with_tools.tool_calls:
-        tool_name = tool_call.get("name", "").lower()
-        tool_call_id = tool_call.get("id")
-        query = tool_call.get("args", {}).get("query", "")
-
-        tool_call_map[tool_call_id] = {
-            "name": tool_name,
-            "query": query
-        }
-
-    # collect ToolMessages that come after this AI message
-    for i in range(last_tool_call_index + 1, len(messages)):
-        msg = messages[i]
-        if isinstance(msg, ToolMessage):
-            tool_call_id = msg.tool_call_id
-            if tool_call_id in tool_call_map:
-                tool_info = tool_call_map[tool_call_id]
-                tool_name = tool_info["name"]
-
-                # categorize by tool type
-                if "retrieve_aou_knowledge_base" in tool_name:
-                    contexts["knowledge_base_query"] = tool_info["query"]
-                    contexts["knowledge_base_results"].append(msg.content)
-                elif "searching_aou_site" in tool_name:
-                    contexts["web_search_query"] = tool_info["query"]
-                    contexts["web_search_results"].append(msg.content)
-
-    return contexts
 
 
 def rerank_and_optimize_retrieved(query: str, data: str) -> RetrieveMessageReranked | str:
@@ -208,16 +171,16 @@ def tool_handler(state: dict):
             if not isinstance(tool_res, str):
                 tool_res = str(tool_res)
 
-            print(50*"=","before reranked\n", tool_res)
+            print(50 * "=", "before reranked\n", tool_res)
             # format, rerank, optimize, and return top-k for tool result (search & retrieval only) to reduce token usage
             # only for these two tools
             if tool.name in [searching_aou_site.name, retrieve_aou_knowledge_base.name]:
                 reranked_info = rerank_and_optimize_retrieved(tool_call['args']['query'], tool_res)
-                print(50*"=","query is\n", tool_call['args']['query'])
+                print(50 * "=", "query is\n", tool_call['args']['query'])
                 # in case of error this will be a string returning the original data without reranking
                 if isinstance(reranked_info, RetrieveMessageReranked):
                     tool_res = str(reranked_info.messages)
-                    print(50*"=","after reranked\n", tool_res)
+                    print(50 * "=", "after reranked\n", tool_res)
             # create a ToolMessage
             result.append(
                 ToolMessage(
@@ -299,6 +262,7 @@ def should_continue(state: AgentState) -> Literal["tool_handler", "cleanup_state
 # CONSTRUCTING AOU MULTI-RETRIEVAL SUPGRAPH
 # ============================================================================
 memory = MemorySaver()
+
 
 def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
     """

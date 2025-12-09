@@ -43,10 +43,11 @@ agent = create_agent(
     llm,
     tools,
     system_prompt=system_prompt,
+
 )
 
 
-question = "what are the moduels that dr abrar teach and what they are used for?"
+question = "what does mohammed teach?"
 
 for step in agent.stream(
     {"messages": [{"role": "user", "content": question}]},

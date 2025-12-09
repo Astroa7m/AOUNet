@@ -58,32 +58,8 @@ class AgentRouterSchema(BaseModel):
     classification: Literal["info", "normal"] = Field(
         description="""
         Classification of the user's query intent:
-
-        'info' - Use this for ANY query that could be answered using AOU (Arab Open University) information. 
-        Always prefer this classification unless it is absolutely clear that the query is unrelated to AOU.
-        This includes:
-            - Questions about AOU faculty members, staff, or students (e.g., "Who is Dr. Ahmed?", "Tell me about Dawood")
-            - Questions about AOU programs, courses, schedules, or policies
-            - Questions about AOU facilities, locations, or services
-            - Questions about AOU events, news, or announcements
-            - Questions about admission, registration, or academic procedures
-            - ANY person's name mentioned, assume they might be affiliated with AOU unless explicitly stated otherwise
-            - Questions about departments, faculties, or organizational structure
-            - Historical or factual information about AOU
-        When unsure, choose 'info' and seek clarification from the user if necessary.
-
-        'normal' - Use this only for queries that are clearly outside AOU’s domain or are general conversation, such as:
-            - Greetings or casual talk (e.g., "Hello", "Thanks", "How are you?")
-            - General knowledge questions clearly unrelated to AOU (e.g., "What's the weather?", "Tell me a joke")
-
-        Behavioral note:
-            - The assistant should always consider asking for clarification even after responding — 
-              especially if there’s any doubt that the user’s intent was fully addressed or could relate to AOU.
-            - Default mindset: “The user probably means something about AOU — let’s clarify to be sure.”
-
-        In short:
-            - 'info': The default and preferred route for anything possibly AOU-related.
-            - 'normal': Clearly non-AOU or social/general conversation.
+        - 'tutors_modules': When the query is about tutors or modules
+        - 'normal': normal chatting, might be faq, policies, study plans, general queries. Might also includes individuals that are not tutors.
         """
     )
 
