@@ -106,7 +106,7 @@ One agent per role (`guest`, `student`, `tutor`). Each gets the general tools pl
 | Middleware | Why |
 |---|---|
 | `dynamic_prompt` | adds "you are talking to Dr. Sara Haddad, a tutor" to the system prompt |
-| `answer_after_enough_tools` (ours) | after 2 tool results the model gets no tools and must answer, so it cannot loop |
+| `AnswerAfterEnoughTools` (ours) | after 2 tool results the model gets a clean request with no tools and must answer, so it cannot loop. Sync and async, the UI streams async |
 | `ModelRetryMiddleware` | retries rate limits (waits 5, 10, 20 s) and a known gpt-oss glitch where it emits a broken tool name |
 | `ModelFallbackMiddleware` | when the free daily quota of one Groq model runs out, the next model answers (each has its own quota) |
 | `ContextEditingMiddleware` | past 2,500 tokens, only the 2 newest tool results are sent in full |
