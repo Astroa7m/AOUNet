@@ -12,8 +12,9 @@ load_dotenv()
 
 # Groq retires models from time to time (llama-3.1-8b-instant is gone), so every name can be changed from .env
 LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
-# the free tier limits tokens per day per model, each fallback model has its own quota
-FALLBACK_MODELS = [m.strip() for m in os.getenv("FALLBACK_MODELS", "openai/gpt-oss-120b,qwen/qwen3.8-27b").split(",") if m.strip()]
+# the free tier limits tokens per day per model, each fallback model has its own quota.
+# qwen/qwen3.8-27b is not a default: with no tools left it typed fake tool calls as its answer
+FALLBACK_MODELS = [m.strip() for m in os.getenv("FALLBACK_MODELS", "openai/gpt-oss-120b").split(",") if m.strip()]
 SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "openai/gpt-oss-120b")
 
 api_key1 = os.getenv("GROQ_API_KEY1")

@@ -75,7 +75,7 @@ Layla takes TM354 with Dr. Sara, so an email from one shows up in the other's in
 - **Demo email mode by default.** Emails stay inside the app. Real Gmail is opt-in through `.env`.
 - Passwords are stored as salted PBKDF2 hashes in `auth/demo_users.json`.
 - Real assessment deadlines in the data, and a prompt rule, so the model does not invent dates.
-- Tool call limits and model retries stop search loops and recover from flaky model output.
+- Every request is kept small enough for the free Groq tier (about 8,000 tokens per minute): tool results have a size budget, old tool results are cleared, and after 2 tool results the model must answer.
 
 ## How it works
 
@@ -106,11 +106,17 @@ One agent per role (`guest`, `student`, `tutor`). Each gets the general tools pl
 | Middleware | Why |
 |---|---|
 | `dynamic_prompt` | adds "you are talking to Dr. Sara Haddad, a tutor" to the system prompt |
-| `ModelRetryMiddleware` | retries rate limits and a known gpt-oss glitch where it emits a broken tool name |
+| `answer_after_enough_tools` (ours) | after 2 tool results the model gets no tools and must answer, so it cannot loop |
+| `ModelRetryMiddleware` | retries rate limits (waits 5, 10, 20 s) and a known gpt-oss glitch where it emits a broken tool name |
 | `ModelFallbackMiddleware` | when the free daily quota of one Groq model runs out, the next model answers (each has its own quota) |
-| `ToolCallLimitMiddleware` | max 3 web searches and 8 tool calls per answer |
-| `SummarizationMiddleware` | summarizes old messages after 4000 tokens |
+| `ContextEditingMiddleware` | past 2,500 tokens, only the 2 newest tool results are sent in full |
+| `SummarizationMiddleware` | summarizes old messages after 3,000 tokens |
 | `HumanInTheLoopMiddleware` | pauses before `send_email` |
+
+**Free tier budget.** Groq's free tier allows about 8,000 tokens per minute and 200,000 per day per model, and an agent
+re-sends the whole conversation at every step. A typical answer uses 2 to 3 model calls of 1,500 to 3,500 tokens,
+so a few people chatting at once can still hit the per-minute limit. Then the app asks them to wait a minute.
+For a busy public demo, a paid Groq tier or a provider with higher free limits removes this.
 
 ## Quick start
 
@@ -167,7 +173,7 @@ All settings live in `.env`. See [`.env.example`](.env.example).
 | `GROQ_API_KEY1` | yes | LLM calls |
 | `GROQ_API_KEY2` | no | separate key for summarization, falls back to key 1 |
 | `LLM_MODEL` | no | main Groq model, default `openai/gpt-oss-20b` |
-| `FALLBACK_MODELS` | no | comma separated, default `openai/gpt-oss-120b,qwen/qwen3.8-27b` |
+| `FALLBACK_MODELS` | no | comma separated, default `openai/gpt-oss-120b` |
 | `SUMMARY_MODEL` | no | default `openai/gpt-oss-120b` |
 | `VECTOR_STORE` | no | `embedded` (default, uses `vector_store/`) or `server` |
 | `QDRANT_URL`, `QDRANT_API_KEY` | only for `server` | a Qdrant server or Qdrant Cloud cluster |

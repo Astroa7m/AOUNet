@@ -13,8 +13,8 @@ from langchain.agents.middleware import (
     ModelRequest,
     ModelRetryMiddleware,
     SummarizationMiddleware,
-    ToolCallLimitMiddleware,
     dynamic_prompt,
+    wrap_model_call,
 )
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
@@ -323,7 +323,10 @@ def is_retryable(error: Exception) -> bool:
     """gpt-oss on Groq sometimes emits a broken tool name (e.g. 'search<|channel|>commentary'), a retry fixes it"""
     if isinstance(error, (groq.RateLimitError, groq.APIConnectionError, groq.InternalServerError)):
         return True
-    return isinstance(error, groq.BadRequestError) and "tool call validation failed" in str(error).lower()
+    message = str(error).lower()
+    return isinstance(error, groq.BadRequestError) and (
+        "tool call validation failed" in message or "tool choice is none" in message
+    )
 
 
 def model_failure_message(error: Exception) -> str:
@@ -332,6 +335,39 @@ def model_failure_message(error: Exception) -> str:
     if isinstance(error, groq.RateLimitError):
         return "The free AI quota is busy right now. Please wait a minute and ask again."
     return "Sorry, I could not reach the language model right now. Please try again in a moment."
+
+
+# every tool round re-sends the whole context, and the free tier allows about 8,000 tokens per minute,
+# so more than 2 tool rounds per answer runs out of budget inside a single answer
+MAX_TOOL_RESULTS_PER_ANSWER = 2
+
+
+@wrap_model_call
+def answer_after_enough_tools(request: ModelRequest, handler):
+    """After 2 tool results for the current question, the model must answer.
+
+    Blocking extra calls (ToolCallLimitMiddleware) let gpt-oss keep asking until LangGraph's 25 step
+    recursion limit crashed the run. Removing the tools alone was not enough either: with tool calls in
+    its history gpt-oss still called one and Groq answered 400 "Tool choice is none". So the model gets
+    a clean conversation instead: earlier questions and answers, plus one message with what the tools found.
+    """
+    messages = request.messages
+    last_question = max((i for i, m in enumerate(messages) if m.type == "human"), default=-1)
+    findings = [m for m in messages[last_question + 1:] if m.type == "tool"]
+    if last_question < 0 or len(findings) < MAX_TOOL_RESULTS_PER_ANSWER:
+        return handler(request)
+
+    earlier = [
+        m for m in messages[:last_question]
+        if m.type == "human" or (m.type == "ai" and m.content and not m.tool_calls)
+    ]
+    found = "\n\n".join(f"[{m.name}]\n{m.content}" for m in findings)
+    final_question = HumanMessage(
+        f"{messages[last_question].content}\n\n"
+        f"Here is what your tools found:\n{found}\n\n"
+        "Answer now using this information. Do not call any tools."
+    )
+    return handler(request.override(messages=earlier + [final_question], tools=[]))
 
 
 def general_tools() -> list:
@@ -351,6 +387,8 @@ def get_agent(role: str = "guest"):
         checkpointer=memory,
         middleware=[
             role_aware_prompt,
+            # before retry and fallback, so every model in the chain gets the tool-free request
+            answer_after_enough_tools,
             # waits 5s, 10s, 20s: long enough for the free tier's per-minute token window to free up
             ModelRetryMiddleware(
                 max_retries=3,
@@ -362,9 +400,6 @@ def get_agent(role: str = "guest"):
             ),
             # daily quota used up on the main model: answer with the next model, it has its own quota
             *([ModelFallbackMiddleware(*fallback_llms)] if fallback_llms else []),
-            # stops search loops: past these limits in one answer the model has to answer with what it has
-            ToolCallLimitMiddleware(tool_name="searching_aou_site", run_limit=3, exit_behavior="continue"),
-            ToolCallLimitMiddleware(run_limit=8, exit_behavior="continue"),
             # old tool results were the bulk of every request (one knowledge base call stayed in all later calls),
             # so once the request passes 2,500 tokens only the 2 newest tool results are sent in full
             ContextEditingMiddleware(edits=[ClearToolUsesEdit(trigger=2500, keep=2)]),
