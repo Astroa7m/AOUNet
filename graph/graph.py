@@ -7,6 +7,7 @@ from langchain.agents import create_agent
 import groq
 from langchain.agents.middleware import (
     HumanInTheLoopMiddleware,
+    ModelFallbackMiddleware,
     ModelRequest,
     ModelRetryMiddleware,
     SummarizationMiddleware,
@@ -20,7 +21,7 @@ from langgraph.graph import StateGraph, MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
-from common.helpers import llm, summarization_model
+from common.helpers import fallback_llms, llm, summarization_model
 from common.pretty_print import pretty_print_messages
 from data_prep.qdrant.config import knowledge_base_available, query_all_collections
 # absolute imports work everywhere once the project is installed with `pip install -e .`
@@ -323,6 +324,14 @@ def is_retryable(error: Exception) -> bool:
     return isinstance(error, groq.BadRequestError) and "tool call validation failed" in str(error).lower()
 
 
+def model_failure_message(error: Exception) -> str:
+    """Shown to the user when every retry failed. The real error goes to the logs (Streamlit Cloud: Manage app)."""
+    print(f"Model call failed after retries: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
+    if isinstance(error, groq.RateLimitError):
+        return "The free AI quota is busy right now. Please wait a minute and ask again."
+    return "Sorry, I could not reach the language model right now. Please try again in a moment."
+
+
 def general_tools() -> list:
     """Web search always works with no key. The knowledge base only when Qdrant is up, otherwise the model loops on it."""
     if knowledge_base_available():
@@ -343,8 +352,10 @@ def get_agent(role: str = "guest"):
             ModelRetryMiddleware(
                 max_retries=3,
                 retry_on=is_retryable,
-                on_failure=lambda e: "Sorry, I could not reach the language model right now. Please try again in a moment.",
+                on_failure=model_failure_message,
             ),
+            # daily quota used up on the main model: answer with the next model, it has its own quota
+            *([ModelFallbackMiddleware(*fallback_llms)] if fallback_llms else []),
             # stops search loops: past these limits in one answer the model has to answer with what it has
             ToolCallLimitMiddleware(tool_name="searching_aou_site", run_limit=3, exit_behavior="continue"),
             ToolCallLimitMiddleware(run_limit=8, exit_behavior="continue"),

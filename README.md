@@ -107,6 +107,7 @@ One agent per role (`guest`, `student`, `tutor`). Each gets the general tools pl
 |---|---|
 | `dynamic_prompt` | adds "you are talking to Dr. Sara Haddad, a tutor" to the system prompt |
 | `ModelRetryMiddleware` | retries rate limits and a known gpt-oss glitch where it emits a broken tool name |
+| `ModelFallbackMiddleware` | when the free daily quota of one Groq model runs out, the next model answers (each has its own quota) |
 | `ToolCallLimitMiddleware` | max 3 web searches and 8 tool calls per answer |
 | `SummarizationMiddleware` | summarizes old messages after 4000 tokens |
 | `HumanInTheLoopMiddleware` | pauses before `send_email` |
@@ -165,7 +166,9 @@ All settings live in `.env`. See [`.env.example`](.env.example).
 |---|---|---|
 | `GROQ_API_KEY1` | yes | LLM calls |
 | `GROQ_API_KEY2` | no | separate key for summarization, falls back to key 1 |
-| `LLM_MODEL`, `SUMMARY_MODEL` | no | Groq model names, default `openai/gpt-oss-20b` |
+| `LLM_MODEL` | no | main Groq model, default `openai/gpt-oss-20b` |
+| `FALLBACK_MODELS` | no | comma separated, default `openai/gpt-oss-120b,qwen/qwen3.8-27b` |
+| `SUMMARY_MODEL` | no | default `openai/gpt-oss-120b` |
 | `VECTOR_STORE` | no | `embedded` (default, uses `vector_store/`) or `server` |
 | `QDRANT_URL`, `QDRANT_API_KEY` | only for `server` | a Qdrant server or Qdrant Cloud cluster |
 | `SUPABASE_URL`, `SUPABASE_KEY` | no | logs queries to a `query_logs` table, skipped when missing |
