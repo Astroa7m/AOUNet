@@ -33,13 +33,18 @@ def _usable_second_key() -> str:
         groq.Groq(api_key=key2, max_retries=0, timeout=10).models.list()  # lists models, costs no tokens
         return key2
     except groq.AuthenticationError:
-        print("GROQ_API_KEY2 is invalid or revoked, the summarizer uses GROQ_API_KEY1 instead", file=sys.stderr, flush=True)
+        print("GROQ_API_KEY2 is invalid or revoked, using only GROQ_API_KEY1", file=sys.stderr, flush=True)
         return api_key1
     except Exception:
         return key2  # network hiccup at startup: keep the key, it is probably fine
 
 
 api_key2 = _usable_second_key()
+if api_key2 != api_key1:
+    # Groq counts quotas per account, so a key from a second account doubles the free daily budget.
+    # Its models come after key 1's, and only help if the key really is from another account.
+    fallback_llms += [ChatGroq(model=model, api_key=api_key2, max_retries=1) for model in [LLM_MODEL, *FALLBACK_MODELS]]
+    print(f"GROQ_API_KEY2 is valid, model chain has {1 + len(fallback_llms)} entries", file=sys.stderr, flush=True)
 summarization_model = ChatGroq(model=SUMMARY_MODEL, api_key=api_key2, max_retries=1)
 
 

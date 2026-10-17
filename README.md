@@ -171,7 +171,7 @@ All settings live in `.env`. See [`.env.example`](.env.example).
 | Variable | Required | What it does |
 |---|---|---|
 | `GROQ_API_KEY1` | yes | LLM calls |
-| `GROQ_API_KEY2` | no | separate key for summarization, falls back to key 1 |
+| `GROQ_API_KEY2` | no | key from a **second Groq account**: its models are added to the fallback chain and it runs the summarizer. Quotas are per account, so a second key from the same account adds nothing |
 | `LLM_MODEL` | no | main Groq model, default `openai/gpt-oss-20b` |
 | `FALLBACK_MODELS` | no | comma separated, default `openai/gpt-oss-120b` |
 | `SUMMARY_MODEL` | no | default `openai/gpt-oss-120b` |
