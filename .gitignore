@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local data and stores
+data_prep/legacy/chroma_db/
+.langgraph_api/
+
+# IDE
+.idea/
+.vscode/
+
+# Raw data stays local (tutors.csv has real staff details)
+data/
+!data/__init__.py
+/graph/.langgraph_api/
+graph_v2/
+
+# embedded Qdrant lock file
+vector_store/.lock

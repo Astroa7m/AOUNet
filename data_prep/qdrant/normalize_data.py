@@ -387,6 +387,7 @@ def process_markdown_folder(folder_path, output_path, max_tokens=500, overlap=50
 
 
 if __name__ == "__main__":
-    process_markdown_folder(r"../data/mds", r"../data/mds_chunked/chunks.jsonl")
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
+    process_markdown_folder(os.path.join(data_dir, "mds"), os.path.join(data_dir, "mds_chunked", "chunks.jsonl"))
 
 

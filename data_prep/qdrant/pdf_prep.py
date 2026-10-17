@@ -4,15 +4,16 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from logger_config import get_logger
+from common.logger_config import get_logger
 
 import torch
 from docling.document_converter import DocumentConverter
 
 logger = get_logger(__name__)
 
-pdf_parent_dir_path = Path(r"..\data\pdfs")
-path_to_mds = Path(r"..\data\mds")
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+pdf_parent_dir_path = DATA_DIR / "pdfs"
+path_to_mds = DATA_DIR / "mds"
 
 def pdfs_to_markdown(source: str) -> str:
     """

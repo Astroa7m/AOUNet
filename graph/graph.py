@@ -1,8 +1,18 @@
 import sys
 from copy import copy
+from functools import lru_cache
+from typing import Any, Dict, Literal
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import SummarizationMiddleware
+import groq
+from langchain.agents.middleware import (
+    HumanInTheLoopMiddleware,
+    ModelRequest,
+    ModelRetryMiddleware,
+    SummarizationMiddleware,
+    ToolCallLimitMiddleware,
+    dynamic_prompt,
+)
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage, RemoveMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.constants import START, END
@@ -12,21 +22,12 @@ from langgraph.types import Command
 
 from common.helpers import llm, summarization_model
 from common.pretty_print import pretty_print_messages
-
-
-def is_streamlit():
-    # running inside Streamlit
-    return "streamlit" in sys.modules
-
-
-if is_streamlit():
-    from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT, AGENT_ROUTER_PROMPT
-    from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
-    from graph.tools import *
-else:
-    from prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT
-    from schema import AgentState, AgentRouterSchema, RetrieveMessageReranked
-    from tools import *
+from data_prep.qdrant.config import knowledge_base_available, query_all_collections
+# absolute imports work everywhere once the project is installed with `pip install -e .`
+from graph.prompt import AOU_NET_SYSTEM_PROMPT, RERANK_PROMPT, AGENT_ROUTER_PROMPT, ROLE_PROMPTS
+from graph.schema import AgentState, AgentRouterSchema, RetrieveMessageReranked, UserContext
+from graph.tools import searching_aou_site, retrieve_aou_knowledge_base
+from graph.user_tools import STUDENT_TOOLS, TUTOR_TOOLS
 
 # todo: fix conversation dataset format user/assistant, might confuse llm
 # todo: add debugging prints or loggers for each step to monitor state change and stateless llm calls
@@ -301,17 +302,61 @@ def build_assistant() -> CompiledStateGraph[Any, Any, Any, Any]:
 # ============================================================================
 # TEST
 # ============================================================================
-def get_agent():
+ROLE_TOOLS = {
+    "guest": [],
+    "student": STUDENT_TOOLS,
+    "tutor": TUTOR_TOOLS,
+}
+
+
+@dynamic_prompt
+def role_aware_prompt(request: ModelRequest) -> str:
+    """Base AOUNet prompt plus a section for the logged in user (name and role only, no records)"""
+    context: UserContext = request.runtime.context or UserContext()
+    return AOU_NET_SYSTEM_PROMPT + ROLE_PROMPTS[context.role].substitute(name=context.name)
+
+
+def is_retryable(error: Exception) -> bool:
+    """gpt-oss on Groq sometimes emits a broken tool name (e.g. 'search<|channel|>commentary'), a retry fixes it"""
+    if isinstance(error, (groq.RateLimitError, groq.APIConnectionError, groq.InternalServerError)):
+        return True
+    return isinstance(error, groq.BadRequestError) and "tool call validation failed" in str(error).lower()
+
+
+def general_tools() -> list:
+    """Web search always works with no key. The knowledge base only when Qdrant is up, otherwise the model loops on it."""
+    if knowledge_base_available():
+        return [searching_aou_site, retrieve_aou_knowledge_base]
+    return [searching_aou_site]
+
+
+@lru_cache(maxsize=None)
+def get_agent(role: str = "guest"):
+    """One agent per role. All share the same memory, each chat has its own thread_id."""
     return create_agent(
         model=llm,
-        tools=tools,
-        system_prompt=AOU_NET_SYSTEM_PROMPT,
+        tools=general_tools() + ROLE_TOOLS[role],
+        context_schema=UserContext,
         checkpointer=memory,
         middleware=[
+            role_aware_prompt,
+            ModelRetryMiddleware(
+                max_retries=3,
+                retry_on=is_retryable,
+                on_failure=lambda e: "Sorry, I could not reach the language model right now. Please try again in a moment.",
+            ),
+            # stops search loops: past these limits in one answer the model has to answer with what it has
+            ToolCallLimitMiddleware(tool_name="searching_aou_site", run_limit=3, exit_behavior="continue"),
+            ToolCallLimitMiddleware(run_limit=8, exit_behavior="continue"),
             SummarizationMiddleware(
                 model=summarization_model,
                 trigger=("tokens", 4000),
                 keep=("messages", 20),
+            ),
+            # pauses the run before any email goes out, the UI shows Approve / Reject
+            HumanInTheLoopMiddleware(
+                interrupt_on={"send_email": {"allowed_decisions": ["approve", "reject"]}},
+                description_prefix="Email waiting for your approval",
             ),
         ],
     )
@@ -329,7 +374,8 @@ if __name__ == "__main__":
 
         result = agent.invoke(
             input={"messages": [HumanMessage(user_input)]},
-            config=config
+            config=config,
+            context=UserContext(),
         )
 
         pretty_print_messages(result["messages"])

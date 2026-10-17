@@ -47,10 +47,11 @@ agent = create_agent(
 )
 
 
-question = "what does mohammed teach?"
+if __name__ == "__main__":
+    question = "what does mohammed teach?"
 
-for step in agent.stream(
-    {"messages": [{"role": "user", "content": question}]},
-    stream_mode="values",
-):
-    step["messages"][-1].pretty_print()
+    for step in agent.stream(
+        {"messages": [{"role": "user", "content": question}]},
+        stream_mode="values",
+    ):
+        step["messages"][-1].pretty_print()

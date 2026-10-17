@@ -8,4 +8,7 @@ version = "0.0.1"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["common*", "data*", "data_prep*", "graph*", "probs*", "ui*"]
+include = ["auth*", "uni*", "common*", "data*", "data_prep*", "graph*", "probs*", "ui*"]
+
+[tool.setuptools.package-data]
+auth = ["demo_users.json"]

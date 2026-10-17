@@ -1,27 +1,29 @@
 import base64
-import time
-from pathlib import Path
 from string import Template
 
 import streamlit as st
-from langchain_core.messages import HumanMessage, AIMessage
 from streamlit_theme import st_theme
-from graph.graph import build_assistant, get_agent
-from ui.helpers.client import get_client_info
-from ui.helpers.query_logger import QueryLogger
 
-# setups
+from common.mailer import email_mode
+from ui.helpers.session import (
+    BG_IMAGE,
+    BOT_ICON,
+    DEMO_STUDENT,
+    DEMO_TUTOR,
+    current_user,
+    init_session,
+    log_in_demo,
+    log_out,
+    start_new_chat,
+)
 
-bot_icon_path = Path(__file__).parent / "assets" / "aou_bot_icon.png"
-user_icon_path = Path(__file__).parent / "assets" / "user_icon.png"
-bg_image_path = Path(__file__).parent / "assets" / "bg.jpg"
-# Initialize logger
-@st.cache_resource
-def get_logger():
-    """Initialize query logger once"""
-    return QueryLogger()  # Reads from DATABASE_URL env variable
+st.set_page_config(
+    page_title="AOUNet",
+    page_icon=str(BOT_ICON),
+)
 
-logger = get_logger()
+init_session()
+
 
 # have to set it initially
 def get_theme():
@@ -39,24 +41,6 @@ def get_theme_colors(theme):
 theme = get_theme()
 overlay_color, header_text_color = get_theme_colors(theme)
 
-
-suggestions = [
-    "Hello, how do I reset my password?",
-    "What services are available for students?",
-    "Show me the latest announcements."
-]
-
-def debugger(message):
-    YELLOW = "\033[93m"
-    RESET = "\033[0m"
-    print(f"{YELLOW}{message}{RESET}")
-
-# page code
-
-st.set_page_config(
-    page_title="AOUNet",
-    page_icon=str(bot_icon_path),
-)
 
 @st.cache_data
 def get_base64_image(image_path):
@@ -106,7 +90,7 @@ def get_custom_styles(overlay_color, header_text_color, bg_image_base64):
 
 
         /* Target buttons inside columns, which we'll use for pills */
-    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button {
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
         border: 1px solid #888888; /* Light border */
         border-radius: 20px;       /* Rounded corners */
         padding: 5px 15px;         /* Padding */
@@ -115,11 +99,11 @@ def get_custom_styles(overlay_color, header_text_color, bg_image_base64):
         font-weight: 500;
     }
     /* Hover effect */
-    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button:hover {
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover {
         border-color: #007bff;     /* Highlight border on hover */
         color: #007bff;            /* Highlight text on hover */
     }
-    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button:focus {
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:focus {
         box-shadow: none;          /* Remove default focus shadow */
         border-color: #007bff;
         color: #007bff;
@@ -128,176 +112,49 @@ def get_custom_styles(overlay_color, header_text_color, bg_image_base64):
 """).substitute(overlay_color=overlay_color, header_text_color=header_text_color, bg_image=bg_image_base64)
 
 
-st.markdown(get_custom_styles(overlay_color, header_text_color, get_base64_image(bg_image_path) if bg_image_path.exists() else ""), unsafe_allow_html=True)
+st.markdown(get_custom_styles(overlay_color, header_text_color, get_base64_image(BG_IMAGE) if BG_IMAGE.exists() else ""), unsafe_allow_html=True)
 
-# session state init
-
-if "assistant" not in st.session_state:
-    #st.session_state.assistant = build_assistant()
-    st.session_state.assistant = get_agent()
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "thread_id" not in st.session_state:
-    import uuid
-    st.session_state.thread_id = str(uuid.uuid4())
+user = current_user()
 
 with st.sidebar:
 
-    if bot_icon_path.exists():
+    if BOT_ICON.exists():
         col_logo = st.columns([1, 2, 1])
         with col_logo[1]:
-            st.image(str(bot_icon_path), width=100)
+            st.image(str(BOT_ICON), width=100)
+
+    if user.role == "guest":
+        st.info("Browsing as a **guest**. Log in as a student or tutor for personal tools.")
+    else:
+        st.success(f"Logged in as **{user.display_name}**  \n{user.role.title()} · `{user.user_id}`")
+        if st.button("Log out", use_container_width=True):
+            log_out()
+            st.rerun()
+
+    st.subheader("Try the demo")
+    st.caption("Layla studies TM354 with Dr. Sara. Email one from the other, then switch accounts to see it arrive.")
+    if st.button("🎓 Student: Layla", use_container_width=True, disabled=user.user_id == DEMO_STUDENT[0]):
+        log_in_demo(DEMO_STUDENT)
+        st.rerun()
+    if st.button("🧑‍🏫 Tutor: Dr. Sara", use_container_width=True, disabled=user.user_id == DEMO_TUTOR[0]):
+        log_in_demo(DEMO_TUTOR)
+        st.rerun()
 
     st.header("Conversation Management")
 
     if st.button("Clear Conversation"):
-        # create a new thread ID
-        import uuid
-
-        st.session_state.thread_id = str(uuid.uuid4())
+        start_new_chat()
         st.rerun()
 
     st.caption(f"Thread ID: `{st.session_state.thread_id[:8]}...`")
+    st.caption(f"Email mode: `{email_mode()}`")
 
-def get_conversation_history():
-    """Retrieve conversation history from LangGraph's checkpointer"""
-    try:
-        config = {"configurable": {"thread_id": st.session_state.thread_id}}
-        state = st.session_state.assistant.get_state(config)
+chat_page = st.Page("views/chat.py", title="Chat", icon=":material/chat:", default=True)
+pages = [chat_page]
+if user.role == "guest":
+    pages.append(st.Page("views/login.py", title="Log in", icon=":material/login:"))
+else:
+    pages.append(st.Page("views/profile.py", title="My profile", icon=":material/person:"))
+    pages.append(st.Page("views/mailbox.py", title="Mailbox", icon=":material/mail:"))
 
-        # extract only HumanMessage and AIMessage for display
-        messages = []
-        for msg in state.values.get("messages", []):
-            if isinstance(msg, HumanMessage):
-                messages.append({"role": "user", "content": msg.content})
-            elif isinstance(msg, AIMessage) and msg.content:
-                # skip tool calls and empty messages, so we do not populate the token
-                if not hasattr(msg, 'tool_calls') or not msg.tool_calls:
-                    messages.append({"role": "assistant", "content": msg.content})
-
-        return messages
-    except Exception as e:
-        print(f"Error retrieving history: {e}")
-        return []
-
-async def query_assistant(prompt):
-    """token-by-token streaming"""
-    # Get client info
-    error_msg = None
-    full_response = ""
-    try:
-        human_message = {"messages": [HumanMessage(content=prompt)]}
-        config = {"configurable": {"thread_id": st.session_state.thread_id}}
-
-        async for event in st.session_state.assistant.astream_events(
-                human_message,
-                config=config,
-                version="v1"
-        ):
-            event_type = event["event"]
-
-            # detect when a tool is about to be called
-            if event_type == "on_tool_start":
-                tool_name = event["name"]
-                tool_input = event["data"].get("input", {})
-
-                # status card for the tool
-                with st.status(f"🟢 Running **{tool_name}**...", expanded=True) as _:
-                    st.markdown(f"`{tool_input}`")
-
-            elif event_type == "on_tool_end":
-                tool_name = event["name"]
-                full_response += f"\nUsed tool: {tool_name}\n"
-                output_data = event["data"].get("output", "No output returned")
-
-                # just for debugging
-                if debugging := False:
-                    with st.status(f"✅ **{tool_name}** completed", expanded=True) as status:
-                        st.markdown("**Response:**")
-                        st.code(str(output_data), language="json")
-                        status.update(label=f"Tool `{tool_name}` finished", state="complete")
-
-            # stream the actual content tokens
-            elif event_type == "on_chat_model_stream":
-                chunk = event["data"].get("chunk")
-                if chunk and hasattr(chunk, "content") and chunk.content:
-                    full_response += chunk.content
-                    yield chunk.content
-    except Exception as e:
-        error_msg = str(e)
-        print(f"Error in query_assistant: {e}")
-        raise
-    finally:
-        # update the log with the complete response
-        if log_id:
-            logger.log_query(
-                id=log_id,
-                response=full_response if full_response else "empty response",
-                error_message=error_msg
-            )
-
-
-# only fetch history if messages cache is empty
-if not st.session_state.messages:
-    st.session_state.messages = get_conversation_history()
-
-# display chat messages from LangGraph's memory
-for message in st.session_state.messages:
-    role = message["role"]
-    icon_path = bot_icon_path if role == "assistant" else user_icon_path
-    with st.chat_message(role, avatar=icon_path):
-        st.write(message["content"])
-
-
-prompt = None
-
-# if we do not have any history show the pills
-if not st.session_state.messages:
-    st.write("What's on your mind today?")
-
-    # creating columns based on suggestions count
-    cols = st.columns(len(suggestions))
-
-    for i, (col, prompt_text) in enumerate(zip(cols, suggestions)):
-        with col:
-            # if a button is clicked, set the 'prompt' variable
-            if st.button(prompt_text, key=f"pill_{i}", use_container_width=True):
-                prompt = prompt_text
-
-if chat_input_prompt := st.chat_input("What is up?"):
-    prompt = chat_input_prompt
-
-if prompt:
-    # get client info
-    ip_address, user_agent = get_client_info()
-
-    # log the query immediately and get the log ID
-    log_id = logger.log_query(
-        query_text=prompt,
-        ip_address=ip_address,
-        user_agent=user_agent
-    ).data[0]['id']
-
-    # adding user message to history
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    # display user message
-    with st.chat_message("user", avatar=user_icon_path):
-        st.write(prompt)
-
-    # display assistant message with streaming
-    with st.chat_message("assistant", avatar=bot_icon_path):
-        # keep this for debugging later
-        try:
-            response = st.write_stream(query_assistant(prompt))
-            st.session_state.messages.append({"role": "assistant", "content": response})
-        except Exception as e:
-            st.error(f"An error occurred processing your query., {e}")
-            # update log with error if response generation failed
-            if log_id:
-                logger.log_query(id=log_id, error_message=str(e))
-    # force rerun to refresh conversation history from checkpointer
-    # we will let streamlit handle this naturally
-    # st.rerun()
+st.navigation(pages).run()

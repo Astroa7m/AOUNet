@@ -1,18 +1,21 @@
 import json
 import time
 import uuid
+from pathlib import Path
 from typing import Dict, List, Any
 
 import pandas as pd
 from qdrant_client.models import PointStruct
 from tqdm import tqdm
 
-from config import *
+from data_prep.qdrant.config import *
 
-general_data_input_file = "../../data/json/general_aou_rag_data_cleaned.json"
-pdf_markdown_json_input_file_path = "../../data/mds_chunked/chunks.jsonl"
-tutor_csv_file_path = "../../data/csv/tutors.csv"
-modules_csv_file_path = "../../data/csv/modules.csv"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+general_data_input_file = DATA_DIR / "json/general_aou_rag_data_cleaned.json"
+pdf_markdown_json_input_file_path = DATA_DIR / "mds_chunked/chunks.jsonl"
+tutor_csv_file_path = DATA_DIR / "csv/tutors.csv"
+modules_csv_file_path = DATA_DIR / "csv/modules.csv"
 
 batch_size = 100
 
@@ -478,6 +481,9 @@ def embed_csv_chunks(
 
 
 if __name__ == "__main__":
+    # ids are random, so build into an empty vector_store/ (or empty collections) to avoid duplicates
+    general_data_chunk()
+
     embed_csv_chunks(
         csv_path=modules_csv_file_path,
         collection_name=modules_collection_name,
@@ -491,3 +497,6 @@ if __name__ == "__main__":
         chunk_fn=create_tutors_chunks,
         client_getter=get_csv_collection(tutors_collection_name)
     )
+
+    # close before exit, otherwise embedded Qdrant errors during interpreter shutdown
+    get_qdrant_client().close()

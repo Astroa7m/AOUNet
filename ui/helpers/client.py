@@ -1,4 +1,3 @@
-from streamlit.web.server.websocket_headers import _get_websocket_headers
 import streamlit as st
 
 def get_client_info():

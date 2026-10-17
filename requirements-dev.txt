@@ -1,0 +1,13 @@
+# Data prep scripts (PDF parsing, CSV to SQL, legacy Chroma), LangGraph Studio and tests
+-r requirements.txt
+sentence-transformers
+langchain-community
+langgraph-cli[inmem]
+langgraph-sdk
+docling
+chromadb
+tiktoken
+pandas
+tqdm
+psycopg2-binary
+pytest

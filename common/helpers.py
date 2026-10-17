@@ -8,10 +8,15 @@ from langgraph.graph.state import CompiledStateGraph
 
 load_dotenv()
 
+# Groq retires models from time to time (llama-3.1-8b-instant is gone), so both names can be changed from .env
+LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "openai/gpt-oss-20b")
+
 api_key1 = os.getenv("GROQ_API_KEY1")
-llm = ChatGroq(model="openai/gpt-oss-20b", api_key=api_key1)
-api_key2 = os.getenv("GROQ_API_KEY2")
-summarization_model = ChatGroq(model="llama-3.1-8b-instant", api_key=api_key2)
+llm = ChatGroq(model=LLM_MODEL, api_key=api_key1)
+# a second key spreads the rate limit, one free key is enough to run the app
+api_key2 = os.getenv("GROQ_API_KEY2") or api_key1
+summarization_model = ChatGroq(model=SUMMARY_MODEL, api_key=api_key2)
 
 
 def visualize_graph(graph: CompiledStateGraph):

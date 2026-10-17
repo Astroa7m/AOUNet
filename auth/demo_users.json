@@ -1,0 +1,242 @@
+{
+  "_note": "Fictional demo data. Passwords are in the README and on the login page.",
+  "modules": {
+    "TM354": {
+      "title": "Software Engineering",
+      "credit_hours": 8,
+      "tutor_id": "T2001",
+      "deadlines": {
+        "TMA01": "2026-09-28",
+        "TMA02": "2026-10-16",
+        "MTA": "2026-11-02",
+        "Final exam": "2026-12-20"
+      }
+    },
+    "M269": {
+      "title": "Algorithms, Data Structures and Computability",
+      "credit_hours": 8,
+      "tutor_id": "T2001",
+      "deadlines": {
+        "TMA01": "2026-10-05",
+        "TMA02": "2026-10-26",
+        "MTA": "2026-11-09",
+        "Final exam": "2026-12-22"
+      }
+    },
+    "TM351": {
+      "title": "Data Management and Analysis",
+      "credit_hours": 8,
+      "tutor_id": "T2002",
+      "deadlines": {
+        "TMA01": "2026-10-01",
+        "TMA02": "2026-10-22",
+        "MTA": "2026-11-05",
+        "Final exam": "2026-12-21"
+      }
+    },
+    "B207A": {
+      "title": "Shaping Business Opportunities",
+      "credit_hours": 8,
+      "tutor_id": "T2002",
+      "deadlines": {
+        "TMA01": "2026-10-08",
+        "TMA02": "2026-10-29",
+        "MTA": "2026-11-12",
+        "Final exam": "2026-12-23"
+      }
+    }
+  },
+  "students": [
+    {
+      "id": "S1001",
+      "salt": "bec080622bd4f63bf6f0ad38a00d8323",
+      "password_hash": "25753e88b01d2ba9993b6c949dbc4c3acff5884c7a3d78eeb0752c19176259d1",
+      "name": "Layla Al-Harthy",
+      "email": "s1001@demo.aou.edu.om",
+      "contact": {
+        "phone": "+968 9100 0001",
+        "personal_email": "layla.demo@example.com",
+        "address": "Al Khuwair, Muscat",
+        "emergency_contact": "Mother, +968 9100 0002"
+      },
+      "inbox": [
+        {
+          "from": "t2001@demo.aou.edu.om",
+          "subject": "Welcome to TM354",
+          "date": "2026-09-10",
+          "body": "Dear Layla,\n\nWelcome to TM354 Software Engineering. My office hours are Sunday and Monday, 12:00-14:00 in Building B, Office 12. Feel free to email me with any questions.\n\nDr. Sara Haddad"
+        }
+      ],
+      "program": "BSc Information Technology and Computing",
+      "level": 3,
+      "gpa": 3.42,
+      "completed_credits": 72,
+      "fees": {
+        "balance_omr": 185.5,
+        "due_date": "2026-11-15"
+      },
+      "enrolled": {
+        "TM354": {
+          "tma": "17/20",
+          "mta": "24/30",
+          "final": null,
+          "attendance": "92%"
+        },
+        "M269": {
+          "tma": "14/20",
+          "mta": "19/30",
+          "final": null,
+          "attendance": "81%"
+        },
+        "TM351": {
+          "tma": "18/20",
+          "mta": "27/30",
+          "final": null,
+          "attendance": "97%"
+        }
+      },
+      "schedule": [
+        {
+          "day": "Sunday",
+          "time": "10:00-12:00",
+          "module": "TM354",
+          "type": "Tutorial",
+          "room": "Lab 2"
+        },
+        {
+          "day": "Monday",
+          "time": "14:00-16:00",
+          "module": "M269",
+          "type": "Tutorial",
+          "room": "Room 105"
+        },
+        {
+          "day": "Tuesday",
+          "time": "10:00-12:00",
+          "module": "TM351",
+          "type": "Tutorial",
+          "room": "Lab 4"
+        },
+        {
+          "day": "Wednesday",
+          "time": "16:00-18:00",
+          "module": "TM354",
+          "type": "Online session",
+          "room": "Teams"
+        }
+      ]
+    },
+    {
+      "id": "S1002",
+      "salt": "99e1aee60c751990ad77f10030655973",
+      "password_hash": "6de67f5beac60a4fe8059fdf84d1446dc9ac15260e1be2697d25f94f09938c7a",
+      "name": "Omar Al-Busaidi",
+      "email": "s1002@demo.aou.edu.om",
+      "contact": {
+        "phone": "+968 9200 0001",
+        "personal_email": "omar.demo@example.com",
+        "address": "Seeb, Muscat",
+        "emergency_contact": "Father, +968 9200 0002"
+      },
+      "inbox": [],
+      "program": "BA Business Studies (Marketing)",
+      "level": 2,
+      "gpa": 3.05,
+      "completed_credits": 48,
+      "fees": {
+        "balance_omr": 0,
+        "due_date": null
+      },
+      "enrolled": {
+        "B207A": {
+          "tma": "15/20",
+          "mta": "21/30",
+          "final": null,
+          "attendance": "88%"
+        },
+        "TM351": {
+          "tma": "12/20",
+          "mta": "18/30",
+          "final": null,
+          "attendance": "75%"
+        }
+      },
+      "schedule": [
+        {
+          "day": "Monday",
+          "time": "10:00-12:00",
+          "module": "B207A",
+          "type": "Tutorial",
+          "room": "Room 210"
+        },
+        {
+          "day": "Tuesday",
+          "time": "10:00-12:00",
+          "module": "TM351",
+          "type": "Tutorial",
+          "room": "Lab 4"
+        }
+      ]
+    }
+  ],
+  "tutors": [
+    {
+      "id": "T2001",
+      "salt": "ff75a8e7138b611d0c2c2b2ffa65aae8",
+      "password_hash": "e5aa6c5e8c5f894e234f960d9d45931d2e257731ada21c266fd3642ffe5fe817",
+      "title": "Dr.",
+      "name": "Sara Haddad",
+      "email": "t2001@demo.aou.edu.om",
+      "contact": {
+        "phone": "+968 2400 1201",
+        "bio": "Lecturer in software engineering and algorithms."
+      },
+      "faculty": "Faculty of Computer Studies",
+      "office": "Building B, Office 12",
+      "office_hours": "Sunday and Monday, 12:00-14:00",
+      "inbox": [
+        {
+          "from": "s1001@demo.aou.edu.om",
+          "subject": "TM354 TMA02 extension request",
+          "date": "2026-10-14",
+          "body": "Dear Dr. Sara, I was ill last week and would like to ask for a 3 day extension for TMA02. I can share the medical report. Kind regards, Layla"
+        },
+        {
+          "from": "programme.coordinator@demo.aou.edu.om",
+          "subject": "M269 midterm marks due",
+          "date": "2026-10-12",
+          "body": "Reminder: please upload M269 midterm marks to SIS before 20 October."
+        },
+        {
+          "from": "it.helpdesk@demo.aou.edu.om",
+          "subject": "LMS maintenance on Friday",
+          "date": "2026-10-10",
+          "body": "The LMS will be offline on Friday from 08:00 to 12:00 for maintenance."
+        }
+      ]
+    },
+    {
+      "id": "T2002",
+      "salt": "7440ade546d0c7a662ba9575f7d2a8b1",
+      "password_hash": "3b5b686df35814c622d392d2d9a7f4fbbf959149459cf4f4afdd3268d4935de3",
+      "title": "Mr.",
+      "name": "Khalid Al-Rawahi",
+      "email": "t2002@demo.aou.edu.om",
+      "contact": {
+        "phone": "+968 2400 0702",
+        "bio": "Lecturer in business studies and data analysis."
+      },
+      "faculty": "Faculty of Business Studies",
+      "office": "Building A, Office 7",
+      "office_hours": "Tuesday, 12:00-15:00",
+      "inbox": [
+        {
+          "from": "s1002@demo.aou.edu.om",
+          "subject": "Question about B207A group project",
+          "date": "2026-10-13",
+          "body": "Hello Mr. Khalid, can our group have 4 members instead of 3? Thanks, Omar"
+        }
+      ]
+    }
+  ]
+}

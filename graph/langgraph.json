@@ -1,6 +1,6 @@
 {
   "$schema": "https://langgra.ph/schema.json",
-  "dependencies": ["."],
+  "dependencies": [".."],
   "graphs": {
     "aounet": "./graph.py:build_assistant"
   },

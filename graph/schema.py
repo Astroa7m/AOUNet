@@ -1,7 +1,19 @@
+from dataclasses import dataclass
 from typing import List, Literal
 
 from langgraph.graph import MessagesState
 from pydantic import BaseModel, Field
+
+
+@dataclass
+class UserContext:
+    """Who is chatting. Passed as runtime context, so tools can read it but the model cannot change it."""
+    user_id: str = "guest"
+    role: Literal["guest", "student", "tutor"] = "guest"
+    name: str = "Guest"
+    email: str = ""
+    # one per browser session, keeps each demo visitor's edits and emails private
+    session_id: str = "default"
 
 
 class AgentState(MessagesState):
@@ -55,7 +67,7 @@ class AgentRouterSchema(BaseModel):
         description="Step by step reasoning behind the classification"
     )
 
-    classification: Literal["info", "normal"] = Field(
+    classification: Literal["tutors_modules", "normal"] = Field(
         description="""
         Classification of the user's query intent:
         - 'tutors_modules': When the query is about tutors or modules
