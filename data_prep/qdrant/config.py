@@ -151,7 +151,7 @@ def query_all_collections(query_text, n_results=5):
     # embeddings match meaning, not exact codes, so documents that literally contain a module code go first
     module_codes = sorted(set(re.findall(r"\b[A-Z]{1,3}\d{3}[A-Z]?\b", query_text.upper())))
 
-    results = []
+    per_collection = []
     collections = [tutors_collection_name, modules_collection_name, q_a_collection_name]
     for collection_name in collections:
             documents = []
@@ -170,9 +170,13 @@ def query_all_collections(query_text, n_results=5):
                 limit=n_results,
             ).points
             documents.extend(hit.payload.get("document", "") for hit in search_results)
-            # drop duplicates, keep order, keep the same total size as before
-            results.extend(list(dict.fromkeys(documents))[:n_results])
+            # drop duplicates, keep order
+            per_collection.append(list(dict.fromkeys(documents))[:n_results])
 
+    # interleave: best of each collection first, so a token budget never gets eaten by one collection
+    results = []
+    for rank in range(n_results):
+        results.extend(docs[rank] for docs in per_collection if rank < len(docs))
     return results
 
 

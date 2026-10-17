@@ -6,6 +6,8 @@ from typing import Any, Dict, Literal
 from langchain.agents import create_agent
 import groq
 from langchain.agents.middleware import (
+    ClearToolUsesEdit,
+    ContextEditingMiddleware,
     HumanInTheLoopMiddleware,
     ModelFallbackMiddleware,
     ModelRequest,
@@ -349,20 +351,27 @@ def get_agent(role: str = "guest"):
         checkpointer=memory,
         middleware=[
             role_aware_prompt,
+            # waits 5s, 10s, 20s: long enough for the free tier's per-minute token window to free up
             ModelRetryMiddleware(
                 max_retries=3,
                 retry_on=is_retryable,
                 on_failure=model_failure_message,
+                initial_delay=5.0,
+                backoff_factor=2.0,
+                max_delay=20.0,
             ),
             # daily quota used up on the main model: answer with the next model, it has its own quota
             *([ModelFallbackMiddleware(*fallback_llms)] if fallback_llms else []),
             # stops search loops: past these limits in one answer the model has to answer with what it has
             ToolCallLimitMiddleware(tool_name="searching_aou_site", run_limit=3, exit_behavior="continue"),
             ToolCallLimitMiddleware(run_limit=8, exit_behavior="continue"),
+            # old tool results were the bulk of every request (one knowledge base call stayed in all later calls),
+            # so once the request passes 2,500 tokens only the 2 newest tool results are sent in full
+            ContextEditingMiddleware(edits=[ClearToolUsesEdit(trigger=2500, keep=2)]),
             SummarizationMiddleware(
                 model=summarization_model,
-                trigger=("tokens", 4000),
-                keep=("messages", 20),
+                trigger=("tokens", 3000),
+                keep=("messages", 8),
             ),
             # pauses the run before any email goes out, the UI shows Approve / Reject
             HumanInTheLoopMiddleware(

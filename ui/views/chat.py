@@ -1,3 +1,5 @@
+import sys
+
 import streamlit as st
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
@@ -93,7 +95,8 @@ async def query_assistant(agent_input, log_id=None):
                     yield chunk.content
     except Exception as e:
         error_msg = str(e)
-        print(f"Error in query_assistant: {e}")
+        # flush, otherwise the line sits in a buffer and never shows in the Streamlit Cloud logs
+        print(f"Error in query_assistant: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         raise
     finally:
         # update the log with the complete response
@@ -103,6 +106,16 @@ async def query_assistant(agent_input, log_id=None):
                 response=full_response if full_response else "empty response",
                 error_message=error_msg
             )
+
+
+def friendly_error(error: Exception) -> str:
+    """Plain words for the errors a free Groq key hits, the full error is in the logs"""
+    text = str(error)
+    if "413" in text or "Request too large" in text:
+        return "This conversation got too long for the free AI tier. Press **Clear Conversation** in the sidebar and ask again."
+    if "429" in text or "rate limit" in text.lower():
+        return "The free AI quota is busy right now. Please wait a minute and ask again."
+    return "Something went wrong while answering. Please try again."
 
 
 def run_and_render(agent_input, log_id=None):
@@ -119,7 +132,7 @@ def run_and_render(agent_input, log_id=None):
             if response:
                 st.session_state.messages.append({"role": "assistant", "content": response})
         except Exception as e:
-            st.error(f"An error occurred processing your query., {e}")
+            st.error(friendly_error(e))
             if log_id:
                 safe_log(id=log_id, error_message=str(e))
     if pending_emails():
