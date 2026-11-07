@@ -103,27 +103,9 @@ flowchart LR
 
 ### Compiled LangGraph graph (generated)
 
-This is the real graph that `get_agent("student").get_graph().draw_mermaid()` returns, not a hand drawing. Guest and tutor are the same shape with their own tools (`docs/langgraph_guest.mmd`, `docs/langgraph_tutor.mmd`).
+This image is the real graph from `get_agent("student").get_graph().draw_mermaid_png()`, not a hand drawing. Guest and tutor have the same shape with their own tools.
 
-```mermaid
-graph TD;
-	__start__([<p>__start__</p>]):::first
-	model(model)
-	tools(tools<hr/><small><em>__tools = searching_aou_site, retrieve_aou_knowledge_base, get_my_student_profile, get_my_marks, get_my_schedule, get_my_tutors, read_my_inbox, send_email</em></small>)
-	SummarizationMiddleware_before_model(SummarizationMiddleware.before_model)
-	HumanInTheLoopMiddleware_after_model(HumanInTheLoopMiddleware.after_model)
-	__end__([<p>__end__</p>]):::last
-	HumanInTheLoopMiddleware_after_model -.-> SummarizationMiddleware_before_model;
-	HumanInTheLoopMiddleware_after_model -.-> __end__;
-	HumanInTheLoopMiddleware_after_model -.-> tools;
-	SummarizationMiddleware_before_model --> model;
-	__start__ --> SummarizationMiddleware_before_model;
-	model --> HumanInTheLoopMiddleware_after_model;
-	tools -.-> SummarizationMiddleware_before_model;
-	classDef default fill:#f2f0ff,line-height:1.2
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
-```
+![LangGraph student agent graph](docs/images/langgraph_student.png)
 
 One agent per role (`guest`, `student`, `tutor`). Each gets the general tools plus its own role tools. Middleware, in order:
 
