@@ -103,9 +103,15 @@ flowchart LR
 
 ### Compiled LangGraph graph (generated)
 
-This image is the real graph from `get_agent("student").get_graph().draw_mermaid_png()`, not a hand drawing. Guest and tutor have the same shape with their own tools.
+These images are the real graphs from `get_agent(role).get_graph().draw_mermaid_png()`, not hand drawings. Same shape, different tools.
+
+**Student**
 
 ![LangGraph student agent graph](docs/images/langgraph_student.png)
+
+**Tutor**
+
+![LangGraph tutor agent graph](docs/images/langgraph_tutor.png)
 
 One agent per role (`guest`, `student`, `tutor`). Each gets the general tools plus its own role tools. Middleware, in order:
 
