@@ -80,25 +80,41 @@ Layla takes TM354 with Dr. Sara, so an email from one shows up in the other's in
 ## How it works
 
 ```mermaid
-flowchart LR
-    U[User in Streamlit] -->|login or one click demo| A[auth: demo accounts]
-    U -->|message| G[get_agent role]
-    A -->|UserContext: id, role, session| G
-    subgraph Agent [LangChain create_agent]
-        P[role aware system prompt] --> M[Groq gpt-oss-20b]
-        M --> T{tools}
-        T --> W[AOU website search]
-        T --> K[embedded Qdrant knowledge base]
-        T --> S[student tools]
-        T --> R[tutor tools]
-        T --> E[send_email]
-    end
-    G --> Agent
-    S --> API[mock university API]
-    R --> API
-    E -->|pause| H[Approve or Don't send card]
-    H -->|resume| E
-    E --> O[demo mail or Gmail]
+flowchart TD
+    A([Open the Streamlit app]) --> B{Logged in?}
+    B -->|No, default| G[Role: guest]
+    B -->|Yes: login or one click demo| L[auth: demo accounts]
+    L --> R{Role of the account}
+    R --> S[Role: student]
+    R --> T[Role: tutor]
+
+    G --> GT["Tools: AOU website search + knowledge base"]
+    S --> ST["Tools: guest tools + profile, marks, schedule, tutors, inbox, send_email"]
+    T --> TT["Tools: guest tools + profile, module roster, inbox, send_email"]
+
+    GT --> C[Chat opens with its own thread_id]
+    ST --> C
+    TT --> C
+
+    C --> M1[User sends a message]
+    M1 --> P[Role aware system prompt + chat history]
+    P --> LLM[Groq model, falls back to the next model on quota or rate limit]
+    LLM --> D{Does the model call a tool?}
+    D -->|No| ANS[Final answer]
+    D -->|Yes| E{Is it send_email?}
+    E -->|No| TOOL[Run the tool: web, knowledge base or mock university API]
+    E -->|Yes| H[Pause: Approve or Don't send card]
+    H -->|Approve| MAIL[Send email: demo mail or Gmail]
+    H -->|Don't send| LLM
+    MAIL --> LLM
+    TOOL --> CAP{2 tool results already?}
+    CAP -->|No| LLM
+    CAP -->|Yes| ANS
+
+    ANS --> STR[Answer streams to the chat]
+    STR --> LOG[Optional: query logged to Supabase]
+    LOG --> DONE([Done: wait for the next message])
+    DONE -.-> M1
 ```
 
 ### Compiled LangGraph graph (generated)
